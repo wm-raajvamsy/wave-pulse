@@ -21,6 +21,7 @@ import QRCode from "react-qr-code";
 import { ChevronDownIcon, Plus, PlusFilledIcon } from "@nextui-org/shared-icons";
 import { UIAgent } from "@/wavepulse/ui-agent";
 import { DatabaseExplorer } from "./database-explorer";
+import { AIAssistant } from "@/../ai";
 
 const connectOptions = {
   mobile: {
@@ -167,6 +168,9 @@ function PulsePage({ section, refresh, channelId }: { section: string, refresh: 
               refreshAppInfo();
               refreshPlatformInfo();
             }}></Info> 
+          </Tab>
+          <Tab key="ai" title="AI">
+            <AIAssistant></AIAssistant>
           </Tab>
           {/* <Tab key="session" title="Session">
             <Session sessionData={sessionDataArr}></Session>

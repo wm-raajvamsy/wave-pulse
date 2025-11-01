@@ -10,13 +10,30 @@ const app = next({ dev, hostname, port });
 const handler = app.getRequestHandler();
 
 app.prepare().then(() => {
-  const httpServer = createServer(handler);
+  const httpServer = createServer((req, res) => {
+    // Add CORS headers to all responses
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+    // Handle preflight OPTIONS requests
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+
+    // Let Next.js handle the request
+    handler(req, res);
+  });
 
   const io = new Server(httpServer, {
     path: '/wavepulse/socket.io',
     cors: {
       origin: "*",
-      methods: ["GET", "POST"]
+      methods: ["GET", "POST"],
+      credentials: true
     }
   });
 
