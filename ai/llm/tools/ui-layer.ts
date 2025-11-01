@@ -9,7 +9,7 @@ import { UI_LAYER_DATA_TOOL_DESCRIPTION } from '../prompts';
  */
 export async function getUILayerData(
   channelId: string,
-  dataType?: 'console' | 'network' | 'components' | 'timeline' | 'all',
+  dataType?: 'console' | 'network' | 'components' | 'timeline' | 'storage' | 'info' | 'all',
   filters?: {
     logLevel?: 'debug' | 'info' | 'error' | 'log' | 'warn';
     limit?: number;
@@ -53,6 +53,15 @@ export async function getUILayerData(
           break;
         case 'timeline':
           filteredData = { timelineLogs: data.timelineLogs || [] };
+          break;
+        case 'storage':
+          filteredData = { storage: data.storage || {} };
+          break;
+        case 'info':
+          filteredData = { 
+            appInfo: data.appInfo || null,
+            platformInfo: data.platformInfo || null
+          };
           break;
       }
     }
@@ -119,8 +128,8 @@ export function getUILayerDataToolSchema(): GeminiToolSchema {
             },
             dataType: {
               type: Type.STRING,
-              enum: ['console', 'network', 'components', 'timeline', 'all'],
-              description: 'Type of data to retrieve. "console" for console logs, "network" for network requests, "components" for UI component tree and properties, "timeline" for performance timeline events (including APP_STARTUP which shows application load time), or "all" for everything.',
+              enum: ['console', 'network', 'components', 'timeline', 'storage', 'info', 'all'],
+              description: 'Type of data to retrieve. "console" for console logs, "network" for network requests, "components" for UI component tree and properties, "timeline" for performance timeline events (including APP_STARTUP which shows application load time), "storage" for application storage (localStorage, sessionStorage, etc.), "info" for application info (app name, version, theme, locale) and platform info (OS, version, device), or "all" for everything.',
             },
             filters: {
               type: Type.OBJECT,

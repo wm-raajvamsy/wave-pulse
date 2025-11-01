@@ -63,6 +63,9 @@ export function useUILayerSync(channelId: string, selectedElementId?: string | n
         componentTree: componentTree,
         timelineLogs: uiAgent.currentSessionData.timelineLogs || [],
         timestamp: Date.now(),
+        storage: uiAgent.currentSessionData.storage,
+        appInfo: uiAgent.currentSessionData.appInfo,
+        platformInfo: uiAgent.currentSessionData.platformInfo,
       };
 
       // Serialize to check if data changed
@@ -185,6 +188,9 @@ export function useUILayerSync(channelId: string, selectedElementId?: string | n
     uiAgent.currentSessionData.requests,
     uiAgent.currentSessionData.componentTree,
     uiAgent.currentSessionData.timelineLogs,
+    uiAgent.currentSessionData.storage,
+    uiAgent.currentSessionData.appInfo,
+    uiAgent.currentSessionData.platformInfo,
     selectedElementId,
     channelId,
     syncToServer,

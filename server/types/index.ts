@@ -97,4 +97,7 @@ export type UILayerData = {
   componentTree: WidgetNode | null;
   timelineLogs: TimelineEvent<any>[];
   timestamp: number;
+  storage?: Record<string, any>;
+  appInfo?: AppInfo;
+  platformInfo?: PlatformInfo;
 };
