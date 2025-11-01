@@ -23,6 +23,7 @@ import { ChevronDownIcon, Plus, PlusFilledIcon } from "@nextui-org/shared-icons"
 import { UIAgent } from "@/wavepulse/ui-agent";
 import { DatabaseExplorer } from "./database-explorer";
 import { AIAssistant } from "@/../ai";
+import { findWidgetById } from "@/utils/componentTree";
 
 const connectOptions = {
   mobile: {
@@ -100,6 +101,43 @@ function PulsePage({ section, refresh, channelId }: { section: string, refresh: 
   const onselectBreadCrumbCallback = useCallback((props:any) => {
    setSelectedWidget(props);
   },[]);
+
+  // Function to select widget by ID (for AI assistant)
+  const handleWidgetSelectById = useCallback((widgetId: string) => {
+    if (!componentTree || !widgetId) return;
+    
+    // Find the widget in the component tree
+    const widget = findWidgetById(componentTree, widgetId);
+    
+    if (widget) {
+      // Find the path to the widget
+      const findPath = (node: WidgetNode, targetId: string, path: WidgetNode[] = []): WidgetNode[] | null => {
+        const nodeId = String(node.id);
+        const searchId = String(targetId);
+        if (nodeId === searchId) {
+          return path;
+        }
+        if (node.children) {
+          for (const child of node.children) {
+            const childPath = findPath(child, targetId, [...path, node]);
+            if (childPath) return childPath;
+          }
+        }
+        return null;
+      };
+      
+      const path = findPath(componentTree, widget.id) || [];
+      setBreadcrumbData([...path, widget]);
+      setSelectedWidget(widget);
+      highlight(widget.id);
+      
+      // Switch to elements tab to show the selection
+      setSelected('elements');
+      
+      // Refresh component tree to ensure it's up to date
+      refreshComponentTree();
+    }
+  }, [componentTree, highlight, refreshComponentTree]);
   return (
     <div className="w-full h-full flex flex-col">
       <Button 
@@ -180,7 +218,10 @@ function PulsePage({ section, refresh, channelId }: { section: string, refresh: 
             }}></Info> 
           </Tab>
           <Tab key="ai" title="AI">
-            <AIAssistant channelId={channelId}></AIAssistant>
+            <AIAssistant 
+              channelId={channelId} 
+              onWidgetSelect={handleWidgetSelectById}
+            ></AIAssistant>
           </Tab>
           {/* <Tab key="session" title="Session">
             <Session sessionData={sessionDataArr}></Session>

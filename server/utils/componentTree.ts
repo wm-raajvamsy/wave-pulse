@@ -70,3 +70,57 @@ export function markSelectedElement(
   return newNode;
 }
 
+/**
+ * Recursively find a widget node by name in the component tree
+ * @param node - The root node of the component tree
+ * @param targetName - The name of the widget to find
+ * @returns The found widget node or null
+ */
+export function findWidgetByName(node: WidgetNode | null, targetName: string): WidgetNode | null {
+  if (!node || !targetName) {
+    return null;
+  }
+
+  // Case-insensitive name matching
+  if (node.name && node.name.toLowerCase() === targetName.toLowerCase()) {
+    return node;
+  }
+
+  if (node.children) {
+    for (const child of node.children) {
+      const found = findWidgetByName(child, targetName);
+      if (found) {
+        return found;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Recursively find all widget nodes matching a name pattern
+ * @param node - The root node of the component tree
+ * @param targetName - The name pattern to search for (case-insensitive partial match)
+ * @param results - Array to accumulate results
+ * @returns Array of found widget nodes
+ */
+export function findWidgetsByName(node: WidgetNode | null, targetName: string, results: WidgetNode[] = []): WidgetNode[] {
+  if (!node || !targetName) {
+    return results;
+  }
+
+  // Case-insensitive partial matching
+  if (node.name && node.name.toLowerCase().includes(targetName.toLowerCase())) {
+    results.push(node);
+  }
+
+  if (node.children) {
+    for (const child of node.children) {
+      findWidgetsByName(child, targetName, results);
+    }
+  }
+
+  return results;
+}
+

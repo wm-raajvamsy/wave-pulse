@@ -5,7 +5,13 @@ import { ChatModal, ChatMessage, LoadingIndicator, TaskList, ResearchSteps, Chat
 
 const STORAGE_KEY_PREFIX = 'wavepulse_ai_chat_';
 
-export function AIAssistant({ channelId }: { channelId?: string }) {
+export function AIAssistant({ 
+  channelId, 
+  onWidgetSelect 
+}: { 
+  channelId?: string;
+  onWidgetSelect?: (widgetId: string) => void;
+}) {
   const storageKey = `${STORAGE_KEY_PREFIX}${channelId || 'default'}`;
   
   // Load messages from localStorage on mount
@@ -85,6 +91,15 @@ export function AIAssistant({ channelId }: { channelId?: string }) {
       if (data.researchSteps && Array.isArray(data.researchSteps)) {
         setResearchSteps(data.researchSteps);
         setShowResearchSteps(true);
+      }
+      
+      // Handle widget selection if provided
+      if (data.widgetSelection && onWidgetSelect) {
+        const { widgetId } = data.widgetSelection;
+        // Use setTimeout to ensure DOM is ready and component tree is loaded
+        setTimeout(() => {
+          onWidgetSelect(widgetId);
+        }, 100);
       }
       
       const aiMessage = {

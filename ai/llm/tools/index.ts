@@ -1,5 +1,6 @@
 import { GeminiToolSchema } from '../../types';
 import { getUILayerData, getUILayerDataToolSchema } from './ui-layer';
+import { selectWidgetByName, getWidgetSelectionToolSchema } from './widget-selection';
 
 /**
  * Tool execution registry
@@ -9,6 +10,9 @@ export const toolExecutors: Record<string, (...args: any[]) => Promise<any>> = {
   get_ui_layer_data: async (args: { channelId: string; dataType?: string; filters?: any }) => {
     return getUILayerData(args.channelId, args.dataType as any, args.filters);
   },
+  select_widget: async (args: { channelId: string; widgetName: string }) => {
+    return selectWidgetByName(args.channelId, args.widgetName);
+  },
 };
 
 /**
@@ -17,6 +21,7 @@ export const toolExecutors: Record<string, (...args: any[]) => Promise<any>> = {
 export function getAllToolSchemas(): GeminiToolSchema[] {
   return [
     getUILayerDataToolSchema(),
+    getWidgetSelectionToolSchema(),
   ];
 }
 

@@ -45,7 +45,7 @@ export class GeminiChatService {
     history: Array<{ role: string; content: string }> = [],
     tools?: GeminiToolSchema[],
     channelId?: string
-  ): Promise<{ message: string; success: boolean; researchSteps?: Array<{ id: string; description: string; status: string }> }> {
+  ): Promise<{ message: string; success: boolean; researchSteps?: Array<{ id: string; description: string; status: string }>; widgetSelection?: { widgetId: string; widgetName: string } }> {
     try {
       // Build conversation contents from history + current message
       const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [
@@ -196,6 +196,9 @@ export class GeminiChatService {
       // Track research steps for tool execution
       const researchSteps: Array<{ id: string; description: string; status: string }> = [];
       
+      // Declare functionResults outside the block so it's accessible later
+      let functionResults: any[] = [];
+      
       // If there are function calls, execute them and get results
       if (functionCalls.length > 0) {
         console.log(`[Gemini] Detected ${functionCalls.length} function call(s)`, functionCalls);
@@ -204,6 +207,8 @@ export class GeminiChatService {
         functionCalls.forEach((funcCall, index) => {
           const stepDesc = funcCall.name === 'get_ui_layer_data' 
             ? `Retrieving ${funcCall.args?.dataType || 'UI layer'} data...`
+            : funcCall.name === 'select_widget'
+            ? `Selecting widget: ${funcCall.args?.widgetName || '...'}`
             : `Executing ${funcCall.name}...`;
           researchSteps.push({
             id: `step-${index}`,
@@ -213,7 +218,7 @@ export class GeminiChatService {
         });
         
         // Execute all function calls (inject channelId if available)
-        const functionResults = await Promise.all(
+        functionResults = await Promise.all(
           functionCalls.map(async (funcCall, index) => {
             try {
               // Update step to in-progress
@@ -235,6 +240,10 @@ export class GeminiChatService {
               // Update step to completed
               if (researchSteps[index]) {
                 researchSteps[index].status = 'completed';
+                // Update description for widget selection
+                if (funcCall.name === 'select_widget' && result.success && result.data?.widgetName) {
+                  researchSteps[index].description = `Selected widget: ${result.data.widgetName}`;
+                }
               }
               
               // Return the data or the full result
@@ -450,10 +459,28 @@ export class GeminiChatService {
         parts: [{ text: messageText }]
       });
 
+      // Extract widget selection metadata from tool results
+      let widgetSelection: { widgetId: string; widgetName: string } | undefined;
+      if (functionResults && functionResults.length > 0) {
+        for (const result of functionResults) {
+          const toolName = result?.functionResponse?.name;
+          const response = result?.functionResponse?.response;
+          // Check if this is a select_widget tool result with widget selection data
+          if (toolName === 'select_widget' && response && response.widgetId && response.widgetName) {
+            widgetSelection = {
+              widgetId: response.widgetId,
+              widgetName: response.widgetName,
+            };
+            break; // Use the first successful selection
+          }
+        }
+      }
+
       return {
         message: messageText,
         success: true,
-        researchSteps: researchSteps.length > 0 ? researchSteps : undefined
+        researchSteps: researchSteps.length > 0 ? researchSteps : undefined,
+        widgetSelection,
       };
     } catch (error) {
       console.error('Gemini API error:', error);
