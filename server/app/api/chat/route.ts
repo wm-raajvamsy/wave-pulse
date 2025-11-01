@@ -1,22 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GeminiChatService } from '@/ai/llm/gemini';
-import { getAllToolSchemas } from '@/ai/llm/tools';
-
-// Create a singleton instance to maintain chat history
-let chatService: GeminiChatService | null = null;
-
-function getChatService(): GeminiChatService {
-  if (!chatService) {
-    chatService = new GeminiChatService();
-    // Set default tools
-    chatService.setTools(getAllToolSchemas());
-  }
-  return chatService;
-}
+import { sendMessageWithFileOperationsAgent } from '@/ai/llm/agents/file-operations-agent';
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, history = [], channelId } = await request.json();
+    const { message, history = [], channelId, projectLocation } = await request.json();
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json(
@@ -25,14 +12,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get chat service instance
-    const service = getChatService();
-
-    // Get tools
-    const tools = getAllToolSchemas();
-    
-    // Pass channelId to service so it can auto-inject into tool calls
-    const result = await service.sendMessage(message, history, tools, channelId);
+    // Use File Operations agent for multi-step tool execution
+    console.log('[Chat API] Using File Operations agent');
+    const result = await sendMessageWithFileOperationsAgent(
+      message,
+      history,
+      channelId,
+      projectLocation
+    );
 
     return NextResponse.json(result, {
       status: 200,

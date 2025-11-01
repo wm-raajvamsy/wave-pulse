@@ -44,7 +44,8 @@ export class GeminiChatService {
     message: string, 
     history: Array<{ role: string; content: string }> = [],
     tools?: GeminiToolSchema[],
-    channelId?: string
+    channelId?: string,
+    projectLocation?: string
   ): Promise<{ message: string; success: boolean; researchSteps?: Array<{ id: string; description: string; status: string }>; widgetSelection?: { widgetId: string; widgetName: string } }> {
     try {
       // Build conversation contents from history + current message
@@ -233,6 +234,31 @@ export class GeminiChatService {
                 console.log(`[Gemini] Auto-injected channelId: ${channelId}`);
               }
               
+              // Auto-generate or inject projectLocation for file system tools
+              const fileSystemTools = [
+                'execute_command',
+                'echo_command',
+                'sed_command',
+                'read_file',
+                'write_file',
+                'append_file',
+                'grep_files',
+                'find_files',
+                'list_directory',
+                'edit_file',
+              ];
+              
+              if (fileSystemTools.includes(funcCall.name) && !args.projectLocation) {
+                // Use provided projectLocation, or auto-generate from channelId
+                const effectiveProjectLocation = projectLocation || 
+                  (channelId ? `/root/WaveMaker/WaveMaker-Studio/projects/${channelId}/generated-rn-app` : undefined);
+                
+                if (effectiveProjectLocation) {
+                  args.projectLocation = effectiveProjectLocation;
+                  console.log(`[Gemini] Auto-injected projectLocation: ${effectiveProjectLocation}`);
+                }
+              }
+              
               console.log(`[Gemini] Executing tool: ${funcCall.name} with args:`, JSON.stringify(args, null, 2));
               const result = await executeTool(funcCall.name, args);
               console.log(`[Gemini] Tool result:`, JSON.stringify(result, null, 2));
@@ -283,6 +309,9 @@ export class GeminiChatService {
           functionResponse: result.functionResponse
         }));
         
+        // Include the original user message in the final response prompt for context
+        const finalPromptWithContext = `${FINAL_RESPONSE_PROMPT}\n\nREMEMBER: The user's original request was: "${message}"\n\nMake sure to complete ALL steps requested in the original message before providing your response.`;
+        
         const updatedContents = [
           ...contents,
           {
@@ -291,7 +320,7 @@ export class GeminiChatService {
           },
           {
             role: 'user' as const,
-            parts: [{ text: FINAL_RESPONSE_PROMPT }]
+            parts: [{ text: finalPromptWithContext }]
           },
         ];
 
@@ -299,7 +328,8 @@ export class GeminiChatService {
         console.log(`[Gemini] Requesting final response with function results...`);
         
         // Request final response with function results
-        // Note: Don't include tools in final response request, as we want text output
+        // Check if we should allow more tool calls (e.g., if user requested multi-step operations)
+        // For now, we'll include tools in the final response to allow chaining
         const finalResponse = await this.ai.models.generateContentStream({
           model: this.modelName,
           config: {
@@ -310,6 +340,8 @@ export class GeminiChatService {
             systemInstruction: {
               parts: [{ text: FINAL_RESPONSE_SYSTEM_INSTRUCTION }]
             },
+            // Include tools to allow chaining (e.g., find then edit)
+            tools: activeTools.length > 0 ? activeTools : undefined,
             // Don't set responseMimeType here - we want natural text
           },
           contents: updatedContents,
@@ -345,9 +377,122 @@ export class GeminiChatService {
 
         console.log(`[Gemini] Final response text length: ${finalText.length}`);
         
-        // If we still have function calls, that's an issue - but proceed with text
+        // If we have function calls in the final response, execute them (for tool chaining)
         if (finalFunctionCalls.length > 0) {
-          console.warn('[Gemini] Unexpected function calls in final response:', finalFunctionCalls);
+          console.log(`[Gemini] Detected ${finalFunctionCalls.length} chained function call(s) in final response:`, finalFunctionCalls);
+          
+          // Execute the chained function calls
+          const chainedResults = await Promise.all(
+            finalFunctionCalls.map(async (funcCall) => {
+              try {
+                const args = funcCall.args ? { ...funcCall.args } : {};
+                
+                // Auto-inject channelId and projectLocation if needed
+                if (channelId && !args.channelId) {
+                  args.channelId = channelId;
+                }
+                
+                const fileSystemTools = [
+                  'execute_command',
+                  'echo_command',
+                  'sed_command',
+                  'read_file',
+                  'write_file',
+                  'append_file',
+                  'grep_files',
+                  'find_files',
+                  'list_directory',
+                  'edit_file',
+                ];
+                
+                if (fileSystemTools.includes(funcCall.name) && !args.projectLocation) {
+                  // Use provided projectLocation, or auto-generate from channelId
+                  const effectiveProjectLocation = projectLocation || 
+                    (channelId ? `/root/WaveMaker/WaveMaker-Studio/projects/${channelId}/generated-rn-app` : undefined);
+                  
+                  if (effectiveProjectLocation) {
+                    args.projectLocation = effectiveProjectLocation;
+                  }
+                }
+                
+                console.log(`[Gemini] Executing chained tool: ${funcCall.name} with args:`, JSON.stringify(args, null, 2));
+                const result = await executeTool(funcCall.name, args);
+                console.log(`[Gemini] Chained tool result:`, JSON.stringify(result, null, 2));
+                
+                return {
+                  functionResponse: {
+                    name: funcCall.name,
+                    response: result.success !== false ? (result.data || result) : result,
+                  },
+                };
+              } catch (error) {
+                console.error(`[Gemini] Error executing chained tool ${funcCall.name}:`, error);
+                return {
+                  functionResponse: {
+                    name: funcCall.name,
+                    response: {
+                      success: false,
+                      error: error instanceof Error ? error.message : 'Unknown error',
+                    },
+                  },
+                };
+              }
+            })
+          );
+          
+          // If we have chained results, append them and make another request
+          if (chainedResults.length > 0) {
+            const chainedResultParts = chainedResults.map(result => ({
+              functionResponse: result.functionResponse
+            }));
+            
+            const chainedContents = [
+              ...updatedContents,
+              {
+                role: 'model' as const,
+                parts: chainedResultParts,
+              },
+              {
+                role: 'user' as const,
+                parts: [{ text: `Please provide a final response based on all the tool results above.\n\nREMEMBER: The user's original request was: "${message}"\n\nMake sure your response addresses the complete original request.` }]
+              },
+            ];
+            
+            // Make final request without tools (just text response)
+            const trulyFinalResponse = await this.ai.models.generateContentStream({
+              model: this.modelName,
+              config: {
+                temperature: 0.7,
+                thinkingConfig: {
+                  thinkingBudget: 0,
+                },
+                systemInstruction: {
+                  parts: [{ text: FINAL_RESPONSE_SYSTEM_INSTRUCTION }]
+                },
+              },
+              contents: chainedContents,
+            });
+            
+            // Collect the truly final text
+            let trulyFinalText = '';
+            for await (const chunk of trulyFinalResponse) {
+              if (chunk.candidates && Array.isArray(chunk.candidates) && chunk.candidates.length > 0) {
+                for (const candidate of chunk.candidates) {
+                  if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts)) {
+                    for (const part of candidate.content.parts) {
+                      if (part.text && typeof part.text === 'string' && !part.functionCall) {
+                        trulyFinalText += part.text;
+                      }
+                    }
+                  }
+                }
+              } else if (chunk.text && typeof chunk.text === 'string') {
+                trulyFinalText += chunk.text;
+              }
+            }
+            
+            fullText = trulyFinalText || finalText;
+          }
         }
 
         // If we got no text, format the tool results in a user-friendly way

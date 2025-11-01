@@ -19,6 +19,7 @@ export function AIAssistant({
     id: string;
     message: string;
     isUser: boolean;
+    researchSteps?: ResearchStep[];
   }>>(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -41,9 +42,7 @@ export function AIAssistant({
   }, [messages, storageKey]);
   
   const [isLoading, setIsLoading] = useState(false);
-  const [researchSteps, setResearchSteps] = useState<ResearchStep[]>([]);
   const [taskList, setTaskList] = useState<TaskItem[]>([]);
-  const [showResearchSteps, setShowResearchSteps] = useState(false);
   const [showTaskList, setShowTaskList] = useState(false);
 
   const handleSendMessage = async (message: string) => {
@@ -55,8 +54,17 @@ export function AIAssistant({
     
     setMessages(prev => [...prev, newMessage]);
     setIsLoading(true);
-    setShowResearchSteps(false);
     setShowTaskList(false);
+
+    // Create a placeholder AI message that we'll update with streaming data
+    const aiMessageId = (Date.now() + 1).toString();
+    const placeholderMessage = {
+      id: aiMessageId,
+      message: '',
+      isUser: false,
+      researchSteps: [] as ResearchStep[]
+    };
+    setMessages(prev => [...prev, placeholderMessage]);
 
     try {
       // Prepare history for context (last 10 messages)
@@ -65,8 +73,8 @@ export function AIAssistant({
         content: msg.message
       }));
 
-      // Call Gemini API
-      const response = await fetch('/wavepulse/api/chat', {
+      // Use streaming endpoint
+      const response = await fetch('/wavepulse/api/chat/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -79,44 +87,111 @@ export function AIAssistant({
       });
 
       if (!response.ok) {
+        // Try to read error as JSON, but handle if it's not
+        try {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to get response from AI');
+        } catch {
+          throw new Error(`Failed to get response from AI (status ${response.status})`);
+        }
       }
 
+      if (!response.headers.get('content-type')?.includes('text/event-stream')) {
+        // Fallback to regular JSON response if streaming not available
       const data = await response.json();
+        setIsLoading(false);
+        setMessages(prev => prev.map(msg => 
+          msg.id === aiMessageId
+            ? {
+                ...msg,
+                message: data.message || 'No response received',
+                researchSteps: data.researchSteps || []
+              }
+            : msg
+        ));
+        return;
+      }
+
+      // Read streaming response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (!reader) {
+        throw new Error('Response body is not readable');
+      }
+
+      let buffer = '';
+      let finalResult: any = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.type === 'step' && data.data?.researchSteps) {
+                // Update research steps in real-time
+                setMessages(prev => prev.map(msg => 
+                  msg.id === aiMessageId
+                    ? { ...msg, researchSteps: data.data.researchSteps }
+                    : msg
+                ));
+              } else if (data.type === 'complete') {
+                // Final update with message
+                finalResult = data.data;
+              } else if (data.type === 'final') {
+                // Final result received
+                finalResult = data.data;
+              } else if (data.type === 'error') {
+                throw new Error(data.error || 'Unknown error');
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
+        }
+      }
       
       setIsLoading(false);
       
-      // Update research steps if provided
-      if (data.researchSteps && Array.isArray(data.researchSteps)) {
-        setResearchSteps(data.researchSteps);
-        setShowResearchSteps(true);
-      }
-      
+      // Update message with final result
+      if (finalResult) {
       // Handle widget selection if provided
-      if (data.widgetSelection && onWidgetSelect) {
-        const { widgetId } = data.widgetSelection;
-        // Use setTimeout to ensure DOM is ready and component tree is loaded
+        if (finalResult.widgetSelection && onWidgetSelect) {
+          const { widgetId } = finalResult.widgetSelection;
         setTimeout(() => {
           onWidgetSelect(widgetId);
         }, 100);
       }
       
-      const aiMessage = {
-        id: (Date.now() + 1).toString(),
-        message: data.message || 'No response received',
-        isUser: false
-      };
-      setMessages(prev => [...prev, aiMessage]);
+        setMessages(prev => prev.map(msg => 
+          msg.id === aiMessageId
+            ? {
+                ...msg,
+                message: finalResult.message || 'Task completed successfully.',
+                researchSteps: finalResult.researchSteps || msg.researchSteps
+              }
+            : msg
+        ));
+      }
     } catch (error) {
       setIsLoading(false);
       
-      const errorMessage = {
-        id: (Date.now() + 1).toString(),
-        message: error instanceof Error ? error.message : 'An error occurred while processing your message',
-        isUser: false
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => prev.map(msg => 
+        msg.id === aiMessageId
+          ? {
+              ...msg,
+              message: error instanceof Error ? error.message : 'An error occurred while processing your message'
+            }
+          : msg
+      ));
     }
   };
 
@@ -133,26 +208,22 @@ export function AIAssistant({
 
             {/* Messages */}
             {messages.map((msg) => (
+              <div key={msg.id}>
+                {/* Show message only if it has content or is user message */}
+                {(msg.message || msg.isUser) && (
               <ChatMessage
-                key={msg.id}
-                message={msg.message}
+                    message={msg.message || (msg.isUser ? '' : 'Processing...')}
                 isUser={msg.isUser}
               />
-            ))}
-
-            {/* Research Steps - Show during loading or after */}
-            {(isLoading || showResearchSteps) && researchSteps.length > 0 && (
+                )}
+                {/* Research Steps - Show for each AI message that has steps (always show if loading) */}
+                {!msg.isUser && msg.researchSteps && msg.researchSteps.length > 0 && (
               <div className="mt-2 mb-4">
-                <ResearchSteps steps={researchSteps} />
+                    <ResearchSteps steps={msg.researchSteps} />
               </div>
             )}
-
-            {/* Loading State */}
-            {isLoading && (
-              <div className="flex justify-start">
-                <LoadingIndicator message="Processing..." />
               </div>
-            )}
+            ))}
 
             {/* Task List */}
             {showTaskList && taskList.length > 0 && !isLoading && (
@@ -182,8 +253,6 @@ export function AIAssistant({
                 className="px-4 py-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-800 hover:bg-zinc-200 rounded transition-colors"
                 onClick={() => {
                   setMessages([]);
-                  setResearchSteps([]);
-                  setShowResearchSteps(false);
                   if (typeof window !== 'undefined') {
                     try {
                       localStorage.removeItem(storageKey);

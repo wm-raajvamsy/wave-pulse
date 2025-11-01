@@ -53,7 +53,7 @@ export const ResearchSteps: React.FC<ResearchStepsProps> = ({
       >
         <h4 className="font-medium text-sm text-zinc-800 flex items-center gap-2">
           <span className="text-zinc-500">{isExpanded ? '▼' : '▶'}</span>
-          Tool Execution Steps
+          Execution Steps
         </h4>
       </div>
       

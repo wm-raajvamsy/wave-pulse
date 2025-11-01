@@ -4,6 +4,8 @@
  */
 export const FINAL_RESPONSE_SYSTEM_INSTRUCTION = `Provide a clear, natural language response based on the function results. Format your response using markdown for better readability (use **bold** for emphasis, lists for multiple items, code blocks for technical details). Be concise but thorough.
 
+CRITICAL FOR MULTI-STEP OPERATIONS: If you have function results from tools like find_files, read_file, etc., and the user originally requested a multi-step operation (e.g., "find and edit", "read and modify", "add caption"), you MUST use the available tools to complete ALL remaining steps. Do not provide a text response until you have completed the entire operation. Use the tools to finish the task, then provide a summary response.
+
 CRITICAL: Only discuss the information that is relevant to the user's question. If the user asked about storage, only provide storage information. If they asked about application info, only provide that. Do not include unrelated information unless the user specifically asked for it.
 
 When the user's question is about CSS styles or component styles AND the function results contain component styles, then CRITICALLY IMPORTANT:

@@ -161,39 +161,5 @@ export function useUILayerSync(channelId: string, selectedElementId?: string | n
       }
     };
   }, [channelId, uiAgent, syncToServer]);
-
-  // Debounced sync on data changes
-  useEffect(() => {
-    if (!channelId || !uiAgent) {
-      return;
-    }
-
-    // Clear existing debounce timeout
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
-
-    // Set new debounce timeout
-    debounceTimeoutRef.current = setTimeout(() => {
-      syncToServer();
-    }, DEBOUNCE_DELAY);
-
-    return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
-    };
-  }, [
-    uiAgent.currentSessionData.logs,
-    uiAgent.currentSessionData.requests,
-    uiAgent.currentSessionData.componentTree,
-    uiAgent.currentSessionData.timelineLogs,
-    uiAgent.currentSessionData.storage,
-    uiAgent.currentSessionData.appInfo,
-    uiAgent.currentSessionData.platformInfo,
-    selectedElementId,
-    channelId,
-    syncToServer,
-  ]);
 }
 
