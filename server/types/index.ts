@@ -45,7 +45,19 @@ export type WidgetNode = {
     tagName: string,
     id: string,
     children: WidgetNode[],
-    selected?: boolean
+    selected?: boolean,
+    properties?: Record<string, any>,
+    styles?: {
+        [key: string]: {
+            __label?: string,
+            __trace?: Array<{
+                name: string,
+                source: string,
+                cssSelector?: string,
+                value: Record<string, any>
+            }>
+        }
+    }
 };
 
 export type TimelineEvent<T> = {

@@ -54,14 +54,14 @@ function PulsePage({ section, refresh, channelId }: { section: string, refresh: 
   const {databases, executeSQl} = useDatabases();
   const {logs, clearLogs} = useConsole();
   const {componentTree, refreshComponentTree, highlight} = useComponentTree();
-  
-  // Sync UI Layer data to server for AI tools
-  useUILayerSync(channelId);
   const [isSettingsOpened, setIsSettingsOpen] = useState(false);
   const [isSaveDataOpened, setIsSaveDataOpen] = useState(false);
   const [selected, setSelected] = useState(section);
   const [isConnected, setIsConnected] = useState(false);
   const [selectedWidget, setSelectedWidget] = useState<WidgetNode>(null as any);
+  
+  // Sync UI Layer data to server for AI tools
+  useUILayerSync(channelId, selectedWidget?.id || null);
   const [breadcrumbData, setBreadcrumbData]=useState<WidgetNode[]>();
   const { showReloadAlert } = useAppConnected();
   //should get props.path into this page
@@ -145,7 +145,11 @@ function PulsePage({ section, refresh, channelId }: { section: string, refresh: 
                   setSelectedWidget(n);
                 highlight(n.id);
               }} onHover={(n) => {
-                highlight(n.id);
+                // Only highlight on hover if no widget is currently selected
+                // This prevents hover from interfering with selection state
+                if (!selectedWidget) {
+                  highlight(n.id);
+                }
               }}
               ></ElementTree>  
             </div>

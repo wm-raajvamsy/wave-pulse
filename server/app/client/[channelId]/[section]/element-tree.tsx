@@ -32,18 +32,15 @@ export const ComponentNode = (props: Props) => {
     }, [e, props.path,props.onSelect, selected, setSelected]);
     const onHover = useCallback((event: any) => {
         event.stopPropagation();
+        // Only call hover handler if provided - hover should not affect selection
         props.onHover && props.onHover(e);
-    }, [e]);
+    }, [e, props.onHover]);
+    // Update visual selected state based on prop, but don't trigger selection on state changes
+    // Selection should only happen on explicit clicks, not on hover or prop changes
     useEffect(() => {
         const isSelected = !!(props.isSelected && props.isSelected(e));
-
-        setSelected((oldValue) => {
-            if (!oldValue && isSelected) {
-                onSelect();
-            }
-            return isSelected
-        });
-    }, [!!props.isSelected && props.isSelected(e), onSelect])
+        setSelected(isSelected);
+    }, [!!props.isSelected && props.isSelected(e)])
     useEffect(() => {
         if (selected) {
             lastSelectedComponent && lastSelectedComponent();
@@ -52,11 +49,7 @@ export const ComponentNode = (props: Props) => {
             };
         }
     }, [selected]);
-    useEffect(() => {
-        setTimeout(() => {
-            e?.id && props.isRoot && onSelect();
-        }, 100);
-    }, [e && e.id && props.isRoot]);
+    // Removed auto-select of root element - selection should only happen on user click
     // useEffect(() => {
     //     e.selected = selected;
     // }, [e, selected, setSelected]);
