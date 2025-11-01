@@ -47,26 +47,67 @@ export class UIAgent extends Agent {
     }
 
     set sessionDataKey(k: string) {
+        const previousKey = this._sessionDataKey;
         if (k) {
             this.localStorage.setItem(WAVEPULSE_SESSION_DATA, k);
         } else {
             this.localStorage.removeItem(WAVEPULSE_SESSION_DATA);
         }
-        if (this.sessionDataKey !== k) {
-            setTimeout(() => window.location.reload(), 100);
+        // Only update if changed, and don't reload - let React handle state updates
+        if (previousKey !== k) {
+            this._sessionDataKey = k;
+            // Instead of reloading, emit connection state change
+            this.connectionSubject.next(this.isConnected);
         }
     }
 
+    private checkTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    private reconnectAttempts = 0;
+    private readonly MAX_RECONNECT_ATTEMPTS = 50; // Limit attempts
+    private readonly RECONNECT_DELAY = 3000; // 3 seconds between attempts
+
     private async checkForWavePulseAgent() {
-        try {
-            await this.invoke(CALLS.HANDSHAKE.WISH, [], {
-                timeout: 2000
-            });
-            this._isConnected = true;
-            this.connectionSubject.next(this.isConnected);
-        } catch(e) {
-            this.checkForWavePulseAgent();
+        // Clear any existing timeout
+        if (this.checkTimeoutId) {
+            clearTimeout(this.checkTimeoutId);
+            this.checkTimeoutId = null;
         }
+
+        // Reset attempts if we're already connected
+        if (this._isConnected) {
+            this.reconnectAttempts = 0;
+            return;
+        }
+
+        // Check connection with retry logic
+        const attemptConnection = async () => {
+            if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+                console.warn('Max reconnection attempts reached. Stopping reconnection attempts.');
+                return;
+            }
+
+            try {
+                await this.invoke(CALLS.HANDSHAKE.WISH, [], {
+                    timeout: 2000
+                });
+                this._isConnected = true;
+                this.reconnectAttempts = 0;
+                this.connectionSubject.next(this.isConnected);
+                // Clear timeout once connected
+                if (this.checkTimeoutId) {
+                    clearTimeout(this.checkTimeoutId);
+                    this.checkTimeoutId = null;
+                }
+            } catch(e) {
+                this.reconnectAttempts++;
+                // Retry with exponential backoff (capped at 10 seconds)
+                const delay = Math.min(this.RECONNECT_DELAY * Math.pow(1.5, Math.min(this.reconnectAttempts / 5, 2)), 10000);
+                this.checkTimeoutId = setTimeout(attemptConnection, delay);
+            }
+        };
+
+        // Start first attempt immediately
+        attemptConnection();
     }
 
     get isConnected() {
@@ -122,7 +163,8 @@ export class UIAgent extends Agent {
             }
         }).then((res) => {
             this._sessionData = {...res.data};
-            this._sessionDataKey = file.name;
+            // Use setter to update sessionDataKey properly without reload
+            this.sessionDataKey = file.name;
         });
     }
 }

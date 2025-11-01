@@ -46,26 +46,25 @@ export const ResearchSteps: React.FC<ResearchStepsProps> = ({
   };
 
   return (
-    <div className={className}>
+    <div className={`bg-zinc-50 border border-zinc-200 rounded-lg p-4 ${className}`}>
       <div 
-        className="flex items-center justify-between cursor-pointer py-2"
+        className="flex items-center justify-between cursor-pointer mb-3"
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <h4 className="font-medium text-xs flex items-center gap-2">
-          <span>{isExpanded ? '▼' : '▶'}</span>
-          Research steps
+        <h4 className="font-medium text-sm text-zinc-800 flex items-center gap-2">
+          <span className="text-zinc-500">{isExpanded ? '▼' : '▶'}</span>
+          Tool Execution Steps
         </h4>
       </div>
-      <p className="text-xs text-gray-500 mb-4 ml-6">
-        These may change as the research progresses.
-      </p>
       
       {isExpanded && (
-        <div className="space-y-4 ml-6">
+        <div className="space-y-3 ml-6">
           {steps.map((step) => (
-            <div key={step.id} className="flex gap-3">
-              <StepIcon status={step.status} />
-              <p className="text-xs flex-1">
+            <div key={step.id} className="flex items-start gap-3">
+              <div className="mt-0.5">
+                <StepIcon status={step.status as ResearchStep['status']} />
+              </div>
+              <p className="text-sm text-zinc-700 flex-1 leading-relaxed">
                 {step.description}
               </p>
             </div>

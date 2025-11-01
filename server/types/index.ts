@@ -78,3 +78,11 @@ export type TableInfo = {
 export type IconSvgProps = SVGProps<SVGSVGElement> & {
   size?: number;
 };
+
+export type UILayerData = {
+  consoleLogs: LogInfo[];
+  networkRequests: NetworkRequest[];
+  componentTree: WidgetNode | null;
+  timelineLogs: TimelineEvent<any>[];
+  timestamp: number;
+};

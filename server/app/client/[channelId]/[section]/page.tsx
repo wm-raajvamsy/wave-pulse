@@ -1,6 +1,7 @@
 "use client";
 
 import { UIAgentContext, useAppConnected, useAppInfo, useComponentTree, useConsole, useDatabases, useLocalStorage, useLocation, useNetworkRequests, usePlatformInfo, useStorageEntries, useTimelineLog } from "@/hooks/hooks";
+import { useUILayerSync } from "@/hooks/useUILayerSync";
 import { Tabs, Tab, Button, Input, DropdownMenu, DropdownItem, Dropdown, DropdownTrigger, ButtonGroup } from "@nextui-org/react";
 import { useRouter } from "next/navigation";
 import { useContext, useState, useEffect , useMemo, useCallback} from "react";
@@ -53,6 +54,9 @@ function PulsePage({ section, refresh, channelId }: { section: string, refresh: 
   const {databases, executeSQl} = useDatabases();
   const {logs, clearLogs} = useConsole();
   const {componentTree, refreshComponentTree, highlight} = useComponentTree();
+  
+  // Sync UI Layer data to server for AI tools
+  useUILayerSync(channelId);
   const [isSettingsOpened, setIsSettingsOpen] = useState(false);
   const [isSaveDataOpened, setIsSaveDataOpen] = useState(false);
   const [selected, setSelected] = useState(section);
@@ -77,10 +81,12 @@ function PulsePage({ section, refresh, channelId }: { section: string, refresh: 
   }, [appId, expoUrl, selectedConnectOption[0]]);
 
   useEffect(() => {
+    if (!uiAgent) return;
+    
     uiAgent.onConnect(() => {
       setIsConnected(uiAgent.isConnected);
     });
-  }, []);
+  }, [uiAgent]);
   useEffect(() => {
     setIsConnected(!!uiAgent.sessionDataKey);
   }, [uiAgent.sessionDataKey]);
@@ -170,7 +176,7 @@ function PulsePage({ section, refresh, channelId }: { section: string, refresh: 
             }}></Info> 
           </Tab>
           <Tab key="ai" title="AI">
-            <AIAssistant></AIAssistant>
+            <AIAssistant channelId={channelId}></AIAssistant>
           </Tab>
           {/* <Tab key="session" title="Session">
             <Session sessionData={sessionDataArr}></Session>
@@ -349,26 +355,35 @@ export default ({ params }: { params: { section: string, channelId: string } } )
   const location = useLocation();
   const localStorage = useLocalStorage();
   const [uiAgent, setUIAgent] = useState<UIAgent>(null as any);
-  const [key, setKey] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
+  
+  // Memoize server URL to prevent unnecessary UIAgent recreation
+  const serverUrl = useMemo(() => {
+    if (!location) return null;
+    return location.href.split('/wavepulse/client')[0];
+  }, [location?.href]);
+  
+  // Create UIAgent only once when dependencies are ready
   useEffect(() => {
-    if (key % 2) {
-      setTimeout(() => setKey(key + 1), 100);
-    }
-  }, [key]);
-  useEffect(() => {
-    if (!location || !localStorage) {
+    if (!serverUrl || !localStorage) {
       return;
     }
-    const server = location.href.split('/wavepulse/client')[0] ;
-    setUIAgent(new UIAgent(
-      server.replace(/(https\/\/)/, 'wss://')
-        .replace(/(http:\/\/)/, 'ws://'),
-        server + '/wavepulse',
-        params.channelId,
-        localStorage));
-  }, [location, localStorage]);
+    
+    // Only create new agent if one doesn't exist or channel changed
+    const wsUrl = serverUrl.replace(/(https\/\/)/, 'wss://')
+      .replace(/(http:\/\/)/, 'ws://');
+    const httpUrl = serverUrl + '/wavepulse';
+    const newAgent = new UIAgent(wsUrl, httpUrl, params.channelId, localStorage);
+    setUIAgent(newAgent);
+    
+    // Cleanup function
+    return () => {
+      // Agent cleanup if needed in the future
+    };
+  }, [serverUrl, localStorage, params.channelId]);
+  
   return uiAgent && 
     (<UIAgentContext.Provider value={uiAgent}>
-      <PulsePage section={params.section} key={key} channelId={params.channelId} refresh={() => setKey(key + 1)}/>
+      <PulsePage section={params.section} key={refreshKey} channelId={params.channelId} refresh={() => setRefreshKey(prev => prev + 1)}/>
     </UIAgentContext.Provider>);
 }

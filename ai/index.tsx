@@ -1,14 +1,39 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChatModal, ChatMessage, LoadingIndicator, TaskList, ResearchSteps, ChatInput, type TaskItem, type ResearchStep } from './components';
 
-export function AIAssistant() {
+const STORAGE_KEY_PREFIX = 'wavepulse_ai_chat_';
+
+export function AIAssistant({ channelId }: { channelId?: string }) {
+  const storageKey = `${STORAGE_KEY_PREFIX}${channelId || 'default'}`;
+  
+  // Load messages from localStorage on mount
   const [messages, setMessages] = useState<Array<{
     id: string;
     message: string;
     isUser: boolean;
-  }>>([]);
+  }>>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(messages));
+      } catch (e) {
+        console.error('Failed to save chat messages:', e);
+      }
+    }
+  }, [messages, storageKey]);
+  
   const [isLoading, setIsLoading] = useState(false);
   const [researchSteps, setResearchSteps] = useState<ResearchStep[]>([]);
   const [taskList, setTaskList] = useState<TaskItem[]>([]);
@@ -42,7 +67,8 @@ export function AIAssistant() {
         },
         body: JSON.stringify({
           message,
-          history: recentHistory
+          history: recentHistory,
+          channelId: channelId
         }),
       });
 
@@ -54,6 +80,12 @@ export function AIAssistant() {
       const data = await response.json();
       
       setIsLoading(false);
+      
+      // Update research steps if provided
+      if (data.researchSteps && Array.isArray(data.researchSteps)) {
+        setResearchSteps(data.researchSteps);
+        setShowResearchSteps(true);
+      }
       
       const aiMessage = {
         id: (Date.now() + 1).toString(),
@@ -74,12 +106,12 @@ export function AIAssistant() {
   };
 
   return (
-    <div className="w-full h-full p-4 pr-6">
-      <ChatModal className="w-full h-[calc(100vh-160px)] border-2 border-black-500 rounded-lg" >
+    <div className="w-full h-full flex flex-col p-4">
+      <ChatModal className="w-full h-[calc(100vh-160px)] border border-zinc-300 rounded-lg flex flex-col">
         <div className="flex flex-col h-full">
-          <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             {messages.length === 0 && !isLoading && (
-              <div className="text-center text-sm text-gray-500 py-8">
+              <div className="text-center text-sm text-zinc-500 py-12">
                 No messages yet. Start a conversation.
               </div>
             )}
@@ -93,15 +125,17 @@ export function AIAssistant() {
               />
             ))}
 
-            {/* Loading State */}
-            {isLoading && (
-              <LoadingIndicator message="Processing..." />
+            {/* Research Steps - Show during loading or after */}
+            {(isLoading || showResearchSteps) && researchSteps.length > 0 && (
+              <div className="mt-2 mb-4">
+                <ResearchSteps steps={researchSteps} />
+              </div>
             )}
 
-            {/* Research Steps */}
-            {showResearchSteps && researchSteps.length > 0 && !isLoading && (
-              <div className="mt-4">
-                <ResearchSteps steps={researchSteps} />
+            {/* Loading State */}
+            {isLoading && (
+              <div className="flex justify-start">
+                <LoadingIndicator message="Processing..." />
               </div>
             )}
 
@@ -114,9 +148,12 @@ export function AIAssistant() {
           </div>
 
           {/* Input Area */}
-          <div className="border-t border-zinc-300 pt-2 pb-2 px-4 flex items-center gap-2 flex-shrink-0">
-            <button className="text-gray-500 hover:text-gray-700 p-1 rounded">
-              <span className="text-xl">+</span>
+          <div className="border-t border-zinc-300 bg-zinc-50 px-6 py-3 flex items-center gap-3 flex-shrink-0">
+            <button 
+              className="text-zinc-500 hover:text-zinc-700 p-1.5 rounded hover:bg-zinc-200 transition-colors"
+              type="button"
+            >
+              <span className="text-lg font-semibold">+</span>
             </button>
             <div className="flex-1">
               <ChatInput
@@ -125,9 +162,36 @@ export function AIAssistant() {
                 disabled={isLoading}
               />
             </div>
-            <button className="px-3 py-1 text-xs text-gray-600 hover:text-gray-800">
-              Cancel
-            </button>
+            {messages.length > 0 && (
+              <button 
+                className="px-4 py-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-800 hover:bg-zinc-200 rounded transition-colors"
+                onClick={() => {
+                  setMessages([]);
+                  setResearchSteps([]);
+                  setShowResearchSteps(false);
+                  if (typeof window !== 'undefined') {
+                    try {
+                      localStorage.removeItem(storageKey);
+                    } catch (e) {
+                      console.error('Failed to clear chat:', e);
+                    }
+                  }
+                }}
+                type="button"
+                title="Clear chat"
+              >
+                Clear
+              </button>
+            )}
+            {isLoading && (
+              <button 
+                className="px-4 py-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-800 hover:bg-zinc-200 rounded transition-colors"
+                onClick={() => setIsLoading(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+            )}
           </div>
         </div>
       </ChatModal>

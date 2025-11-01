@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GeminiChatService } from '@/ai/llm/gemini';
+import { getAllToolSchemas } from '@/ai/llm/tools';
 
 // Create a singleton instance to maintain chat history
 let chatService: GeminiChatService | null = null;
@@ -7,13 +8,15 @@ let chatService: GeminiChatService | null = null;
 function getChatService(): GeminiChatService {
   if (!chatService) {
     chatService = new GeminiChatService();
+    // Set default tools
+    chatService.setTools(getAllToolSchemas());
   }
   return chatService;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, history = [] } = await request.json();
+    const { message, history = [], channelId } = await request.json();
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json(
@@ -25,8 +28,11 @@ export async function POST(request: NextRequest) {
     // Get chat service instance
     const service = getChatService();
 
-    // Call the Gemini service from ai/ folder
-    const result = await service.sendMessage(message, history);
+    // Get tools
+    const tools = getAllToolSchemas();
+    
+    // Pass channelId to service so it can auto-inject into tool calls
+    const result = await service.sendMessage(message, history, tools, channelId);
 
     return NextResponse.json(result, {
       status: 200,
