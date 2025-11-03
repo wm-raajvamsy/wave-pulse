@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendMessageWithFileOperationsAgent } from '@/ai/llm/agents/file-operations-agent';
+import { sendMessageWithInformationRetrievalAgent } from '@/ai/llm/agents/information-retrieval-agent';
+import { determineAgentForQuery } from '@/ai/llm/agents/agent-router';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,14 +14,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use File Operations agent for multi-step tool execution
-    console.log('[Chat API] Using File Operations agent');
-    const result = await sendMessageWithFileOperationsAgent(
+    // Determine which agent to use using AI-based routing
+    const agentType = await determineAgentForQuery(message);
+    const useIRAgent = agentType === 'information-retrieval';
+    
+    console.log(`[Chat API] AI Router selected: ${agentType} agent for query: "${message.substring(0, 50)}..."`);
+    
+    let result: any;
+    
+    if (useIRAgent) {
+      // Use Information Retrieval Agent
+      const irResult = await sendMessageWithInformationRetrievalAgent(
+        message,
+        history.map(h => ({
+          role: h.role as 'user' | 'model',
+          parts: [{ text: h.content }],
+        })),
+        channelId,
+        projectLocation
+      );
+      
+      // Convert IR Agent response format to match frontend expectations
+      result = {
+        message: irResult.answer || 'Unable to generate answer.',
+        researchSteps: irResult.researchSteps || [],
+        success: true,
+      };
+    } else {
+      // Use File Operations Agent
+      result = await sendMessageWithFileOperationsAgent(
       message,
       history,
       channelId,
       projectLocation
     );
+    }
 
     return NextResponse.json(result, {
       status: 200,
@@ -71,4 +100,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

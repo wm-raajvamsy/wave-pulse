@@ -1,6 +1,8 @@
 import { GeminiToolSchema } from '../../types';
 import { getUILayerData, getUILayerDataToolSchema } from './ui-layer';
 import { selectWidgetByName, getWidgetSelectionToolSchema } from './widget-selection';
+import { getWidgetPropertiesStyles, getWidgetPropertiesStylesToolSchema } from './widget-properties-styles';
+import { evalExpression, getExpressionEvalToolSchema } from './expression-eval';
 import {
   executeCommand,
   echoCommand,
@@ -20,11 +22,17 @@ import {
  * Maps tool names to their execution functions
  */
 export const toolExecutors: Record<string, (...args: any[]) => Promise<any>> = {
-  get_ui_layer_data: async (args: { channelId: string; dataType?: string; filters?: any }) => {
-    return getUILayerData(args.channelId, args.dataType as any, args.filters);
+  get_ui_layer_data: async (args: { channelId?: string; dataType?: string; filters?: any }) => {
+    return getUILayerData(args.channelId!, args.dataType as any, args.filters);
   },
-  select_widget: async (args: { channelId: string; widgetName: string }) => {
-    return selectWidgetByName(args.channelId, args.widgetName);
+  select_widget: async (args: { channelId?: string; widgetName: string }) => {
+    return selectWidgetByName(args.channelId!, args.widgetName);
+  },
+  get_widget_properties_styles: async (args: { channelId?: string; widgetId: string }) => {
+    return getWidgetPropertiesStyles(args.channelId!, args.widgetId);
+  },
+  eval_expression: async (args: { channelId?: string; expression: string }) => {
+    return evalExpression(args.channelId!, args.expression);
   },
   // File system tools
   execute_command: async (args: { command: string; projectLocation?: string }) => {
@@ -99,6 +107,8 @@ export function getAllToolSchemas(): GeminiToolSchema[] {
   return [
     getUILayerDataToolSchema(),
     getWidgetSelectionToolSchema(),
+    getWidgetPropertiesStylesToolSchema(),
+    getExpressionEvalToolSchema(),
     ...getAllFileSystemToolSchemas(),
   ];
 }

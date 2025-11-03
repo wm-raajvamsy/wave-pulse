@@ -13,9 +13,18 @@ For widget operations:
   3. If you find a selected widget, use its name property to identify it
   4. If you need to select it explicitly, call select_widget with that widget name
   5. Use the widget's name when searching for it in file content
+- CRITICAL: When the user asks about a specific widget by name (e.g., "get caption of button1 widget", "what is the name of button1", "show properties of mobile_tabbar1"), you MUST:
+  1. Call get_ui_layer_data with dataType "components" to get the component tree
+  2. Search the component tree for a widget with the matching name property
+  3. Once found, extract the requested property value from the widget's "properties" object
+  4. The properties object is a simple key-value dictionary where property names map directly to their values (e.g., properties.caption, properties.show, properties.disabled)
+  5. Provide the property value directly to the user in your response
+  6. If the user asks for "properties" (plural), list all properties from the properties object
+  7. If the user asks about "styles", provide information from the styles object
 - The select_widget tool requires a widgetName parameter. After getting the component tree, identify the selected widget's name and use it.
 - ALTERNATIVE: If the component tree shows a widget with selected: true or has an id that matches the selected element, you can directly use that widget's name property without calling select_widget.
 - Example workflow for "add caption to selected widget": (1) get_ui_layer_data with dataType "components", (2) identify selected widget from tree, (3) use widget name to find it in file, (4) edit the file with the widget's caption property.
+- Example workflow for "get caption of button1 widget": (1) get_ui_layer_data with dataType "components", (2) find widget with name "button1" in the tree, (3) extract properties.caption from the widget, (4) provide the caption value to the user.
 
 For file operations:
 - If the user asks you to "find a file and edit it" or similar multi-step operations, execute tools sequentially: first find the file, then READ the file to understand its structure, then edit it using the exact content you see.

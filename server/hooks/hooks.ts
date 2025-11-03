@@ -55,6 +55,55 @@ export const useConsole = () => {
             });
         };
     }, [logs]);
+    
+    // Poll for expression evaluation requests and execute them
+    useEffect(() => {
+        if (!uiAgent || !uiAgent.channelId) return;
+        
+        const pollInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/wavepulse/api/expression-eval?channelId=${uiAgent.channelId}`);
+                const data = await response.json();
+                
+                if (data.requests && data.requests.length > 0) {
+                    for (const req of data.requests) {
+                        try {
+                            console.log(`[Expression Eval] Executing expression: ${req.expression}`);
+                            const result = await uiAgent.invoke(CALLS.EXPRESSION.EVAL, [{expr: req.expression}]);
+                            
+                            // Submit result back to server
+                            await fetch('/wavepulse/api/expression-eval', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    requestId: req.requestId,
+                                    result: result,
+                                }),
+                            });
+                            
+                            console.log(`[Expression Eval] Result submitted for ${req.requestId}:`, result);
+                        } catch (error) {
+                            console.error(`[Expression Eval] Error executing expression ${req.expression}:`, error);
+                            // Submit error result
+                            await fetch('/wavepulse/api/expression-eval', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    requestId: req.requestId,
+                                    result: null,
+                                }),
+                            });
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('[Expression Eval] Error polling for requests:', error);
+            }
+        }, 1000); // Poll every second
+        
+        return () => clearInterval(pollInterval);
+    }, [uiAgent]);
+    
     return {logs, clearLogs};
 };
 

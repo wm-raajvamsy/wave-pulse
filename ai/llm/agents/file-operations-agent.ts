@@ -8,7 +8,8 @@ import { StateGraph, END, START } from '@langchain/langgraph';
 import { GoogleGenAI } from '@google/genai';
 import { createGeminiClient } from '../gemini';
 import { executeTool, getAllToolSchemas } from '../tools';
-import { SYSTEM_INSTRUCTION_WITH_TOOLS } from '../prompts';
+import { SYSTEM_INSTRUCTION_WITH_TOOLS, buildContinuationPrompt, ContinuationPromptContext } from '../prompts';
+import { getAISeed } from '../config';
 
 /**
  * Agent state
@@ -70,6 +71,7 @@ async function agentNode(state: FileOperationsAgentState): Promise<Partial<FileO
       parts: [{ text: SYSTEM_INSTRUCTION_WITH_TOOLS }]
     },
     tools: tools.length > 0 ? tools : undefined,
+    seed: getAISeed(),
   };
 
   // Call Gemini
@@ -263,13 +265,6 @@ async function toolNode(state: FileOperationsAgentState): Promise<Partial<FileOp
 
   // Find the original user request (first user message)
   const originalUserMessage = messages.find(m => m.role === 'user')?.parts?.find(p => p.text)?.text || '';
-  const mentionsSelectedWidget = originalUserMessage.toLowerCase().includes('selected widget') || 
-                                   originalUserMessage.toLowerCase().includes('the widget');
-  
-  // Detect if user mentioned a file name (common patterns: ".component.js", ".js", ".tsx", etc.)
-  const mentionsFile = /\.(component\.js|js|tsx|ts|jsx|component\.tsx?)[\s"'`]/.test(originalUserMessage) ||
-                       originalUserMessage.toLowerCase().includes('component.js') ||
-                       originalUserMessage.toLowerCase().includes('find') && originalUserMessage.toLowerCase().includes('file');
   
   // Check if we have file-related tool results and extract file paths
   const filePaths = toolResults
@@ -303,109 +298,23 @@ async function toolNode(state: FileOperationsAgentState): Promise<Partial<FileOp
     tr.result?.componentTree
   );
   
-  // Create a prompt that reminds the agent of the original request and file paths
-  let continuationPrompt = '';
-  if (originalUserMessage) {
-    continuationPrompt = `The user's original request was: "${originalUserMessage}". `;
-  }
-  
-  // Prevent retrying failed get_ui_layer_data calls
-  if (failedUILayerData.length > 0 && !hasComponentTree) {
-    continuationPrompt += `WARNING: get_ui_layer_data failed with "No data found for this channelId". Do NOT retry this call. The component tree data is not currently available. If you already have widget information from a previous successful get_ui_layer_data call, use that. Otherwise, proceed with the file operations using the widget name you identified. `;
-  }
-  
-  // If user mentioned a file but find_files hasn't been called, remind agent
-  if (mentionsFile && !hasFindFiles && filePaths.length === 0) {
-    continuationPrompt += `CRITICAL: The user mentioned a file. You MUST first call find_files to locate the exact file path before attempting to read or edit it. Do NOT guess the file path - use find_files to get the correct full path. `;
-  }
-  
-  // If user mentioned "selected widget" but we haven't gotten component tree yet and it hasn't failed
-  if (mentionsSelectedWidget && !hasComponentTree && failedUILayerData.length === 0) {
-    continuationPrompt += `CRITICAL: The user mentioned "selected widget". You MUST first call get_ui_layer_data with dataType "components" to get the component tree and identify which widget is currently selected. `;
-  }
-  
-  // Check if we have component tree data from get_ui_layer_data
+  // Find component tree result and read file result for context
   const componentTreeResult = toolResults.find(tr => tr.name === 'get_ui_layer_data' && tr.result?.success === true && tr.result?.componentTree);
-  if (componentTreeResult && mentionsSelectedWidget) {
-    const componentTree = componentTreeResult.result.componentTree;
-    // Try to find selected widget in the tree
-    const findSelectedWidget = (node: any): any => {
-      if (node.selected === true) return node;
-      if (node.children && Array.isArray(node.children)) {
-        for (const child of node.children) {
-          const found = findSelectedWidget(child);
-          if (found) return found;
-        }
-      }
-      return null;
-    };
-    const selectedWidget = componentTree ? findSelectedWidget(componentTree) : null;
-    
-    if (selectedWidget) {
-      const captionValue = selectedWidget.properties?.caption ?? '';
-      continuationPrompt += `IMPORTANT: The selected widget in the component tree is "${selectedWidget.name}" (id: ${selectedWidget.id}). `;
-      if (captionValue !== undefined) {
-        continuationPrompt += `This widget already has a caption attribute with value "${captionValue}". When editing the file, you MUST search for the EXISTING caption attribute pattern (e.g., caption="${captionValue}" or caption="") and replace ONLY that attribute value. DO NOT search for name="${selectedWidget.name}" and add a new caption - this will create duplicates. `;
-      }
-    } else {
-      continuationPrompt += `REMINDER: You have component tree data from get_ui_layer_data. Look for widgets with "selected: true" or check which widget is currently selected in the tree. Use that widget's "name" property to find it in the file content. `;
-    }
-  }
-  
-  // Check if read_file was called and we're dealing with widget property edits (caption, show, etc.)
   const readFileResult = toolResults.find(tr => tr.name === 'read_file');
-  const mentionsPropertyEdit = originalUserMessage.toLowerCase().match(/\b(caption|show|disabled|name|classname)\s*=/i) ||
-                               originalUserMessage.toLowerCase().includes('modify') ||
-                               originalUserMessage.toLowerCase().includes('change') ||
-                               originalUserMessage.toLowerCase().includes('set');
   
-  if (readFileResult && readFileResult.result?.content && mentionsPropertyEdit) {
-    const content = readFileResult.result.content;
-    // Extract widget name if available from component tree
-    const componentTreeResult = toolResults.find(tr => tr.name === 'get_ui_layer_data' && tr.result?.success === true && tr.result?.componentTree);
-    if (componentTreeResult) {
-      const componentTree = componentTreeResult.result.componentTree;
-      const findSelectedWidget = (node: any): any => {
-        if (node.selected === true) return node;
-        if (node.children && Array.isArray(node.children)) {
-          for (const child of node.children) {
-            const found = findSelectedWidget(child);
-            if (found) return found;
-          }
-        }
-        return null;
-      };
-      const selectedWidget = componentTree ? findSelectedWidget(componentTree) : null;
-      if (selectedWidget && content.includes(`name="${selectedWidget.name}"`)) {
-        // Check what properties already exist in the file for this widget
-        const widgetPattern = new RegExp(`name="${selectedWidget.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>`, 'g');
-        const match = content.match(widgetPattern);
-        if (match && match[0]) {
-          const widgetTag = match[0];
-          // Check for common attributes that might already exist
-          const existingAttrs = ['caption', 'show', 'disabled', 'name', 'classname'].filter(attr => 
-            widgetTag.includes(`${attr}=`)
-          );
-          
-          if (existingAttrs.length > 0) {
-            continuationPrompt += `CRITICAL: The file content shows that the widget name="${selectedWidget.name}" already has these attributes: ${existingAttrs.join(', ')}. When modifying any property, you MUST search for the EXISTING attribute pattern (e.g., ${existingAttrs.map(a => `${a}="..."`).join(', ')}) and replace ONLY that attribute value. Do NOT search for name="${selectedWidget.name}" and add a new attribute - this creates duplicate attributes. Always replace existing attributes, never add new ones. `;
-          }
-        }
-      }
-    }
-  }
+  // Build continuation prompt using the centralized prompt builder
+  const promptContext: ContinuationPromptContext = {
+    originalUserMessage,
+    toolResults,
+    filePaths,
+    hasComponentTree,
+    hasFindFiles,
+    failedUILayerData,
+    componentTreeResult,
+    readFileResult,
+  };
   
-  if (filePaths.length > 0) {
-    continuationPrompt += `CRITICAL: The file paths from previous tool results are: ${filePaths.join(', ')}. You MUST use these EXACT file paths (copy them verbatim) for ANY file operations like read_file, edit_file, or write_file. Do NOT modify, shorten, or guess these paths. Copy the entire path exactly as shown. `;
-  } else if (mentionsFile && !hasFindFiles) {
-    continuationPrompt += `IMPORTANT: You need to call find_files first to get the exact file path. The user mentioned a file, but you don't have the file path yet. `;
-  }
-  
-  continuationPrompt += 'Based on the tool results above, continue with the next steps to complete the request. If all steps are complete, provide a final response confirming completion.';
-  
-  if (!originalUserMessage && filePaths.length === 0) {
-    continuationPrompt = 'Continue with the next steps if needed, or provide a final response.';
-  }
+  const continuationPrompt = buildContinuationPrompt(promptContext);
 
   const newMessages = [
     ...messages,

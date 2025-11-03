@@ -8,6 +8,7 @@ import {
   FINAL_RESPONSE_PROMPT, 
   FINAL_RESPONSE_SYSTEM_INSTRUCTION 
 } from './prompts';
+import { getAISeed } from './config';
 
 // Initialize Gemini client
 export function createGeminiClient(apiKey?: string) {
@@ -69,6 +70,7 @@ export class GeminiChatService {
         thinkingConfig: {
           thinkingBudget: 0,
         },
+        seed: getAISeed(),
       };
 
       // Add system instruction to encourage tool usage when relevant
@@ -343,6 +345,7 @@ export class GeminiChatService {
             // Include tools to allow chaining (e.g., find then edit)
             tools: activeTools.length > 0 ? activeTools : undefined,
             // Don't set responseMimeType here - we want natural text
+            seed: getAISeed(),
           },
           contents: updatedContents,
         });
@@ -469,6 +472,7 @@ export class GeminiChatService {
                 systemInstruction: {
                   parts: [{ text: FINAL_RESPONSE_SYSTEM_INSTRUCTION }]
                 },
+                seed: getAISeed(),
               },
               contents: chainedContents,
             });

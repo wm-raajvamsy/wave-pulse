@@ -175,8 +175,18 @@ export function AIAssistant({
           msg.id === aiMessageId
             ? {
                 ...msg,
-                message: finalResult.message || 'Task completed successfully.',
+                message: finalResult.message || finalResult.answer || 'Task completed successfully.',
                 researchSteps: finalResult.researchSteps || msg.researchSteps
+              }
+            : msg
+        ));
+      } else {
+        // If no finalResult but we have researchSteps, update with empty message
+        setMessages(prev => prev.map(msg => 
+          msg.id === aiMessageId
+            ? {
+                ...msg,
+                message: msg.message || 'Processing completed. Check research steps for details.',
               }
             : msg
         ));

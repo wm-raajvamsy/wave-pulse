@@ -111,7 +111,7 @@ export function getWidgetSelectionToolSchema(): GeminiToolSchema {
               description: 'The name of the widget to select. This should match the "name" property of the widget in the component tree. Use exact match when possible, or partial match if needed.',
             },
           },
-          required: ['channelId', 'widgetName'],
+          required: ['widgetName'],
         },
       },
     ],

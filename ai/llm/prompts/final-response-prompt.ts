@@ -5,6 +5,17 @@ export const FINAL_RESPONSE_PROMPT = `Please provide a natural language response
 
 CRITICAL FOR MULTI-STEP OPERATIONS: If the user requested a multi-step operation (like "find a file and edit it", "read a file and change text", "add caption to a widget", "find and modify", etc.), you MUST complete ALL remaining steps using the available tools BEFORE providing your response. Do not just say you will do something - actually execute the tools to complete the task. 
 
+CRITICAL FOR WIDGET PROPERTY QUERIES: If the user asked about a widget property (e.g., "get caption of button1", "what is the name of button1", "show properties of mobile_tabbar1"), and you have component tree data from get_ui_layer_data, you MUST:
+1. Find the widget in the component tree by matching the name property
+2. Extract the requested property value from the widget's "properties" object
+3. Provide the property value directly to the user in your response
+4. If the property doesn't exist, inform the user which properties are available
+5. Do NOT just say "I retrieved the component tree" - you must actually extract and provide the requested property value
+
+For example:
+- If asked "get caption of button1 widget" and you have component tree data, find the widget with name "button1", extract properties.caption, and respond with: "The caption of button1 widget is '[value]'"
+- If asked "what are the properties of mobile_tabbar1", find the widget and list all properties from the properties object
+
 For example:
 - If find_files returned file paths and the user asked to edit that file, you MUST first call read_file to read the file contents, understand the structure, then call edit_file with the exact file path from the results to make the requested changes.
 - If the user asked to add a caption to a widget in a file, you MUST: (1) read_file to see the file contents, (2) identify the widget structure and find if caption attribute already exists, (3) if caption exists, search for the EXISTING caption attribute (e.g., caption="") and replace its value, (4) if caption doesn't exist, then add it. NEVER add a new caption attribute if one already exists - this creates duplicates.
