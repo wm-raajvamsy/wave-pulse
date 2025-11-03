@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server';
 import { sendMessageWithFileOperationsAgentStreaming } from '@/ai/llm/agents/file-operations-agent';
 import { sendMessageWithInformationRetrievalAgentStreaming } from '@/ai/llm/agents/information-retrieval-agent';
+import { sendMessageWithCodebaseAgentStreaming } from '@/ai/llm/agents/codebase-agent';
 import { determineAgentForQuery } from '@/ai/llm/agents/agent-router';
 
 /**
  * Streaming chat endpoint that sends research step updates in real-time
- * Automatically routes to Information Retrieval Agent or File Operations Agent based on query type
+ * Automatically routes to Information Retrieval Agent, File Operations Agent, or Codebase Agent based on query type
  */
 export async function POST(request: NextRequest) {
   try {
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Determine which agent to use using AI-based routing
-    let agentType: 'information-retrieval' | 'file-operations';
+    let agentType: 'information-retrieval' | 'file-operations' | 'codebase';
     try {
       agentType = await determineAgentForQuery(message);
       console.log(`[Chat API] AI Router selected: ${agentType} agent for query: "${message.substring(0, 50)}..."`);
@@ -38,9 +39,9 @@ export async function POST(request: NextRequest) {
         
         // Send step updates as they happen
         try {
-          console.log(`[Chat API] Starting agent execution for ${useIRAgent ? 'Information Retrieval' : 'File Operations'} agent`);
+          console.log(`[Chat API] Starting agent execution for ${agentType} agent`);
           
-          if (useIRAgent) {
+          if (agentType === 'information-retrieval') {
             // Use Information Retrieval Agent
             finalResult = await sendMessageWithInformationRetrievalAgentStreaming(
               message,
@@ -93,6 +94,45 @@ export async function POST(request: NextRequest) {
                 success: true,
               };
             }
+          } else if (agentType === 'codebase') {
+            // Use Codebase Agent
+            finalResult = await sendMessageWithCodebaseAgentStreaming(
+              message,
+              channelId,
+              (update: { type: 'step' | 'complete'; data?: any }) => {
+                // Handle step updates
+                if (update.type === 'step') {
+                  console.log('[Chat API] Codebase Agent step update:', update.data?.researchSteps?.length || update.data?.steps?.length || 0, 'steps');
+                  // Normalize to researchSteps format for frontend consistency
+                  const normalizedUpdate = {
+                    ...update,
+                    data: {
+                      researchSteps: update.data?.researchSteps || update.data?.steps || []
+                    }
+                  };
+                  const chunk = `data: ${JSON.stringify(normalizedUpdate)}\n\n`;
+                  controller.enqueue(encoder.encode(chunk));
+                } else if (update.type === 'complete') {
+                  console.log('[Chat API] Codebase Agent complete event received');
+                  const completeData = {
+                    ...update.data,
+                    message: update.data?.message || 'Unable to generate response.',
+                    researchSteps: update.data?.researchSteps || [],
+                  };
+                  console.log('[Chat API] Sending complete event to frontend:', { 
+                    messageLength: completeData.message?.length || 0,
+                    stepsCount: completeData.researchSteps?.length || 0 
+                  });
+                  const chunk = `data: ${JSON.stringify({ type: 'complete', data: completeData })}\n\n`;
+                  controller.enqueue(encoder.encode(chunk));
+                  finalResult = completeData;
+                }
+              },
+              history.map(h => ({
+                role: h.role as 'user' | 'model',
+                parts: [{ text: h.content }],
+              }))
+            );
           } else {
             // Use File Operations Agent
           finalResult = await sendMessageWithFileOperationsAgentStreaming(
@@ -107,14 +147,11 @@ export async function POST(request: NextRequest) {
           );
           }
           
-          // Send final result (only if we haven't already sent it via complete event for IR Agent)
-          if (finalResult) {
-            // For IR Agent, we already sent complete event, so skip final
+          // Send final result (only if we haven't already sent it via complete event)
+          if (finalResult && agentType !== 'information-retrieval' && agentType !== 'codebase') {
             // For File Operations Agent, send final event
-            if (!useIRAgent) {
           const finalChunk = `data: ${JSON.stringify({ type: 'final', data: finalResult })}\n\n`;
           controller.enqueue(encoder.encode(finalChunk));
-            }
           }
         } catch (error) {
           const errorChunk = `data: ${JSON.stringify({ 

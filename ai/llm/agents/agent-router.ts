@@ -4,12 +4,12 @@ import { getAISeed } from '@/ai/llm/config';
 /**
  * AI-based agent router
  * Uses Gemini to intelligently determine which agent should handle the query
- * Returns: 'information-retrieval' | 'file-operations'
+ * Returns: 'information-retrieval' | 'file-operations' | 'codebase'
  */
 export async function determineAgentForQuery(
   message: string,
   useSeed: boolean = true
-): Promise<'information-retrieval' | 'file-operations'> {
+): Promise<'information-retrieval' | 'file-operations' | 'codebase'> {
   try {
     const ai = createGeminiClient();
     const modelName = (typeof process !== 'undefined' ? process.env?.GEMINI_MODEL : undefined) || 'gemini-2.5-flash-lite';
@@ -31,13 +31,23 @@ Available Agents:
    - Searching code ("search for pattern", "grep files")
    - Any task that requires reading, writing, or modifying files
 
+3. **Codebase Agent**: Use this for questions about:
+   - How things work in the codebase ("how does BaseComponent work?", "how does two-way binding work?")
+   - Why things are designed a certain way ("why does BaseComponent use PropsProvider?")
+   - What something is ("what is WmButton?", "what are the default button styles?")
+   - Where something is located ("where is NavigationService implemented?")
+   - Codebase architecture and internals ("how does the transpiler convert HTML to JSX?")
+   - Style definitions and class names ("what is the class name for button icon?", "how do I style icon inside a button?")
+   - Any question about the WaveMaker React Native codebase implementation, architecture, or design
+
 User Query: "${message}"
 
 Analyze the query and respond with ONLY one word:
-- "information-retrieval" if the query is about understanding UI/widget behavior, properties, events, or component structure
+- "information-retrieval" if the query is about understanding UI/widget behavior, properties, events, or component structure in the current application
 - "file-operations" if the query requires file manipulation, code editing, or file system operations
+- "codebase" if the query is about how/why/what/where in the WaveMaker React Native codebase itself
 
-Your response must be exactly one of these two words, nothing else.`;
+Your response must be exactly one of these three words, nothing else.`;
 
     const config: any = {
       temperature: 0.1, // Low temperature for consistent routing decisions
@@ -75,6 +85,8 @@ Your response must be exactly one of these two words, nothing else.`;
       return 'information-retrieval';
     } else if (decision.includes('file-operations')) {
       return 'file-operations';
+    } else if (decision.includes('codebase')) {
+      return 'codebase';
     }
     
     // Default fallback: use keywords if AI response is unclear
@@ -85,6 +97,17 @@ Your response must be exactly one of these two words, nothing else.`;
       'widget properties', 'widget styles', 'event handler', 'on tap', 'on click',
       'show me', 'tell me about', 'explain', 'what is the',
     ];
+    
+    const codebaseKeywords = [
+      'how does', 'why does', 'what is', 'where is',
+      'basecomponent', 'wmbutton', 'wavemaker', 'codebase',
+      'style definition', 'class name', 'rnStyleSelector',
+      'transpiler', 'transformer', 'codegen', 'runtime'
+    ];
+    
+    if (codebaseKeywords.some(keyword => lowerMessage.includes(keyword))) {
+      return 'codebase';
+    }
     
     return irKeywords.some(keyword => lowerMessage.includes(keyword))
       ? 'information-retrieval'
@@ -101,6 +124,17 @@ Your response must be exactly one of these two words, nothing else.`;
       'widget properties', 'widget styles', 'event handler', 'on tap', 'on click',
       'show me', 'tell me about', 'explain', 'what is the',
     ];
+    
+    const codebaseKeywords = [
+      'how does', 'why does', 'what is', 'where is',
+      'basecomponent', 'wmbutton', 'wavemaker', 'codebase',
+      'style definition', 'class name', 'rnStyleSelector',
+      'transpiler', 'transformer', 'codegen', 'runtime'
+    ];
+    
+    if (codebaseKeywords.some(keyword => lowerMessage.includes(keyword))) {
+      return 'codebase';
+    }
     
     return irKeywords.some(keyword => lowerMessage.includes(keyword))
       ? 'information-retrieval'

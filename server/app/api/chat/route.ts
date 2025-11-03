@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendMessageWithFileOperationsAgent } from '@/ai/llm/agents/file-operations-agent';
 import { sendMessageWithInformationRetrievalAgent } from '@/ai/llm/agents/information-retrieval-agent';
+import { sendMessageWithCodebaseAgent } from '@/ai/llm/agents/codebase-agent';
 import { determineAgentForQuery } from '@/ai/llm/agents/agent-router';
 
 export async function POST(request: NextRequest) {
@@ -16,13 +17,12 @@ export async function POST(request: NextRequest) {
 
     // Determine which agent to use using AI-based routing
     const agentType = await determineAgentForQuery(message);
-    const useIRAgent = agentType === 'information-retrieval';
     
     console.log(`[Chat API] AI Router selected: ${agentType} agent for query: "${message.substring(0, 50)}..."`);
     
     let result: any;
     
-    if (useIRAgent) {
+    if (agentType === 'information-retrieval') {
       // Use Information Retrieval Agent
       const irResult = await sendMessageWithInformationRetrievalAgent(
         message,
@@ -39,6 +39,19 @@ export async function POST(request: NextRequest) {
         message: irResult.answer || 'Unable to generate answer.',
         researchSteps: irResult.researchSteps || [],
         success: true,
+      };
+    } else if (agentType === 'codebase') {
+      // Use Codebase Agent
+      const codebaseResult = await sendMessageWithCodebaseAgent(
+        message,
+        channelId
+      );
+      
+      result = {
+        message: codebaseResult.message,
+        researchSteps: codebaseResult.researchSteps || [],
+        success: codebaseResult.success,
+        errors: codebaseResult.errors
       };
     } else {
       // Use File Operations Agent

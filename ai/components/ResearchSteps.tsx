@@ -22,6 +22,7 @@ const formatStepDescription = (id: string, description: string): string => {
   
   // Format common step IDs
   const stepNames: Record<string, string> = {
+    // Information Retrieval Agent steps
     'query-analysis': 'Analyzing query',
     'current-page-state': 'Retrieving current page state',
     'get-page-name': 'Getting page name from timeline',
@@ -36,25 +37,106 @@ const formatStepDescription = (id: string, description: string): string => {
     'read-variables-file': 'Reading variables file',
     'analyze-page-files': 'Analyzing page files',
     'synthesize-answer': 'Synthesizing answer',
+    
+    // Codebase Agent steps
+    'query-analyzer': 'Analyzing query intent and domain',
+    'file-discovery': 'Discovering relevant files',
+    'code-analysis': 'Analyzing code structure',
+    'sub-agent-execution': 'Executing sub-agents',
+    'validation': 'Validating response',
+    'final-response': 'Generating final response',
+    
+    // Codebase Agent sub-agent steps (format: sub-agent-{agentName})
+    'sub-agent-BaseAgent': 'BaseAgent: Analyzing core infrastructure',
+    'sub-agent-ComponentAgent': 'ComponentAgent: Analyzing widget components',
+    'sub-agent-StyleAgent': 'StyleAgent: Analyzing theme and styles',
+    'sub-agent-StyleDefinitionAgent': 'StyleDefinitionAgent: Analyzing style definitions',
+    'sub-agent-ServiceAgent': 'ServiceAgent: Analyzing runtime services',
+    'sub-agent-BindingAgent': 'BindingAgent: Analyzing data binding',
+    'sub-agent-VariableAgent': 'VariableAgent: Analyzing variables',
+    'sub-agent-WatcherAgent': 'WatcherAgent: Analyzing watch system',
+    'sub-agent-MemoAgent': 'MemoAgent: Analyzing memoization',
+    'sub-agent-FragmentAgent': 'FragmentAgent: Analyzing fragments',
+    'sub-agent-TranspilerAgent': 'TranspilerAgent: Analyzing transpilation',
+    'sub-agent-TransformerAgent': 'TransformerAgent: Analyzing transformations',
+    'sub-agent-ParserAgent': 'ParserAgent: Analyzing parsing',
+    'sub-agent-FormatterAgent': 'FormatterAgent: Analyzing formatting',
+    'sub-agent-GenerationAgent': 'GenerationAgent: Analyzing code generation',
+    'sub-agent-AppAgent': 'AppAgent: Analyzing app architecture',
   };
+  
+  // Check if it's a sub-agent step
+  if (id.startsWith('sub-agent-')) {
+    // Handle sub-agent operation steps (e.g., sub-agent-BaseAgent-discover-files)
+    if (id.includes('-discover-files')) {
+      const agentName = id.replace('sub-agent-', '').replace('-discover-files', '');
+      return `${agentName}: Discovering files`;
+    }
+    if (id.includes('-read-files')) {
+      const agentName = id.replace('sub-agent-', '').replace('-read-files', '');
+      return `${agentName}: Reading files`;
+    }
+    if (id.includes('-generate-response')) {
+      const agentName = id.replace('sub-agent-', '').replace('-generate-response', '');
+      return `${agentName}: Generating response`;
+    }
+    
+    // Handle simple sub-agent step (e.g., sub-agent-BaseAgent)
+    const agentName = id.replace('sub-agent-', '');
+    return stepNames[id] || `${agentName}: Processing query`;
+  }
   
   return stepNames[id] || id.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 };
 
 // Helper to categorize steps
 const categorizeStep = (id: string): { category: string; icon: string } => {
-  if (id.includes('query') || id.includes('analysis')) {
+  // Codebase Agent categories (check these first as they're more specific)
+  if (id === 'query-analyzer') {
     return { category: 'Query Analysis', icon: '🔍' };
   }
+  if (id === 'file-discovery') {
+    return { category: 'File Discovery', icon: '📁' };
+  }
+  if (id === 'code-analysis') {
+    return { category: 'Code Analysis', icon: '🔬' };
+  }
+  if (id === 'sub-agent-execution') {
+    return { category: 'Sub-Agent Execution', icon: '🤖' };
+  }
+  if (id === 'validation') {
+    return { category: 'Validation', icon: '✅' };
+  }
+  if (id === 'final-response') {
+    return { category: 'Response Generation', icon: '📝' };
+  }
+  
+  // Sub-agent specific steps (if any are created)
+  if (id.startsWith('sub-agent-')) {
+    // Check if it's a sub-agent operation step
+    if (id.includes('-discover-files') || id.includes('-read-files')) {
+      return { category: 'File Operations', icon: '📁' };
+    }
+    if (id.includes('-generate-response')) {
+      return { category: 'Response Generation', icon: '📝' };
+    }
+    return { category: 'Sub-Agent Execution', icon: '🤖' };
+  }
+  
+  // Information Retrieval Agent categories
   if (id.includes('current-page') || id.includes('resolve-page') || id.includes('get-page-name')) {
     return { category: 'Page State', icon: '📄' };
   }
-  if (id.includes('file') || id.includes('find') || id.includes('read')) {
+  if ((id.includes('file') || id.includes('find') || id.includes('read')) && !id.includes('file-discovery')) {
     return { category: 'File Operations', icon: '📁' };
   }
   if (id.includes('analyze') || id.includes('synthesize')) {
     return { category: 'Analysis', icon: '⚙️' };
   }
+  if (id.includes('query') || id.includes('analysis')) {
+    return { category: 'Query Analysis', icon: '🔍' };
+  }
+  
   return { category: 'Processing', icon: '🔄' };
 };
 

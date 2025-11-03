@@ -17,6 +17,7 @@ import { createPageAgent } from './page-agent';
 import { getAllToolSchemas, executeTool } from '../tools';
 import { SYSTEM_INSTRUCTION_WITH_TOOLS } from '../prompts';
 import { getAISeed } from '../config';
+import { sendMessageWithCodebaseAgentStreaming } from './codebase-agent/api';
 
 /**
  * Query Analyzer Node
@@ -25,28 +26,81 @@ import { getAISeed } from '../config';
 async function queryAnalyzerNode(
   state: InformationRetrievalAgentState
 ): Promise<Partial<InformationRetrievalAgentState>> {
-  const { userQuery } = state;
+  const { userQuery, conversationHistory } = state;
   
   console.log('[IR Agent] Query Analyzer: Analyzing query:', userQuery);
+  console.log('[IR Agent] Query Analyzer: Conversation history length:', conversationHistory?.length || 0);
   
   try {
     const ai = createGeminiClient();
     const modelName = (typeof process !== 'undefined' ? process.env?.GEMINI_MODEL : undefined) || 'gemini-2.5-flash-lite';
     
-    const analysisPrompt = `Analyze this query: "${userQuery}"
+    // Build conversation context if available
+    let conversationContext = '';
+    if (conversationHistory && conversationHistory.length > 0) {
+      conversationContext = '\n\nPrevious conversation context:\n';
+      // Include last 3 exchanges for context (6 messages max)
+      const recentHistory = conversationHistory.slice(-6);
+      recentHistory.forEach(msg => {
+        const role = msg.role === 'user' ? 'User' : 'Assistant';
+        const text = msg.parts?.[0]?.text || '';
+        if (text) {
+          conversationContext += `${role}: ${text}\n`;
+        }
+      });
+    }
+    
+    const analysisPrompt = `Analyze this query: "${userQuery}"${conversationContext}
 
-Identify:
-1. Which widget is being referenced (selected widget? specific name?)
-2. What action/event is mentioned (tap, click, change, etc.)
-3. What information is needed (properties, styles, events, behavior)
-4. What context is required (current page, file structure, etc.)
+CRITICAL: First determine if this query requires understanding the WaveMaker React Native codebase (runtime/platform code) or if it's about the current application's pages/widgets.
+
+**ANALYSIS PROCESS:**
+
+1. **Understand the query context**:
+   - If there's previous conversation, analyze what was discussed
+   - If the current query uses words like "this", "that", "it", "from script", "programmatically", etc., determine what they refer to based on the conversation history
+   - Identify any platform features, mechanisms, or APIs mentioned in the conversation
+
+2. **Determine if CODEBASE knowledge is needed**:
+   - Does this query ask about HOW platform features work internally?
+   - Does this query ask about HOW to use platform APIs/programming mechanisms?
+   - Does this query ask about platform architecture, implementation details, or runtime behavior?
+   - Does this query ask about invoking platform features from code/script?
+   - Does this query ask about understanding platform mechanisms (actions, navigation, bindings, etc.)?
+
+3. **Determine if APPLICATION knowledge is needed**:
+   - Does this query ask about specific widgets/pages in the user's application?
+   - Does this query ask about application-specific code, variables, or events?
+   - Does this query ask about what happens in the user's specific app?
+
+**EXAMPLES OF CODEBASE QUERIES:**
+- Questions about how platform features work ("how does [feature] work?")
+- Questions about how to use platform APIs from code ("how to invoke [feature] from script?")
+- Questions about platform mechanisms ("how do actions work?", "how does navigation work?")
+- Questions about architecture and internals ("how is [feature] implemented?")
+
+**EXAMPLES OF APPLICATION QUERIES:**
+- Questions about specific widgets ("what happens when I tap this button?")
+- Questions about application structure ("what properties does this widget have?")
+- Questions about application-specific code ("what does this script do?")
+
+${conversationHistory && conversationHistory.length > 0 ? `
+
+**CONVERSATION ANALYSIS:**
+- Review the previous conversation to understand what the user is referring to
+- If the current query is a follow-up (uses "this", "that", "it", etc.), identify what it refers to
+- If the previous conversation mentioned platform features/mechanisms and the current query asks how to use them programmatically, this likely requires CODEBASE knowledge
+- If the previous conversation was about application-specific widgets/pages and the current query continues that, this likely requires APPLICATION knowledge
+` : ''}
 
 Return a JSON object with:
 {
-  "widgetReference": "selected" | "specific-name" | widget name,
-  "action": "tap" | "click" | "change" | etc.,
-  "informationNeeded": ["properties", "styles", "events", "behavior"],
-  "executionPlan": ["current-page-state", "file-operations", "page-agent"]
+  "requiresCodebase": true | false,
+  "widgetReference": "selected" | "specific-name" | widget name | null,
+  "action": "tap" | "click" | "change" | etc. | null,
+  "informationNeeded": ["properties", "styles", "events", "behavior"] | null,
+  "executionPlan": ["codebase-agent"] | ["current-page-state", "file-operations", "page-agent"],
+  "reasoning": "Brief explanation of why codebase or application knowledge is needed"
 }`;
 
     const response = await ai.models.generateContent({
@@ -55,10 +109,20 @@ Return a JSON object with:
         temperature: 0.3,
         seed: getAISeed(),
       },
-      contents: [{
+      contents: [
+        // Include conversation history as context
+        ...(conversationHistory && conversationHistory.length > 0 
+          ? conversationHistory.slice(-6).map(msg => ({
+              role: msg.role === 'user' ? 'user' : 'model',
+              parts: msg.parts || [{ text: '' }]
+            }))
+          : []
+        ),
+        {
         role: 'user',
         parts: [{ text: analysisPrompt }],
-      }],
+        }
+      ],
     });
     
     let analysisText = '';
@@ -84,20 +148,26 @@ Return a JSON object with:
         queryAnalysis = JSON.parse(jsonMatch[0]);
       } else {
         // Fallback: extract information from text
+        // Check if query mentions codebase/platform concepts
+        const requiresCodebase = /how.*work|how.*disable|how.*style|default.*style|class.*name|ripple|codebase|platform|runtime|basecomponent|binding/i.test(userQuery);
         queryAnalysis = {
+          requiresCodebase: requiresCodebase,
           widgetReference: analysisText.includes('selected') ? 'selected' : 'specific-name',
           action: analysisText.match(/tap|click|change|press|select/i)?.[0]?.toLowerCase() || undefined,
           informationNeeded: ['properties', 'styles', 'events', 'behavior'],
-          executionPlan: ['current-page-state', 'file-operations', 'page-agent'],
+          executionPlan: requiresCodebase ? ['codebase-agent'] : ['current-page-state', 'file-operations', 'page-agent'],
         };
       }
     } catch (e) {
       // Fallback analysis
+      // Check if query mentions codebase/platform concepts
+      const requiresCodebase = /how.*work|how.*disable|how.*style|default.*style|class.*name|ripple|codebase|platform|runtime|basecomponent|binding/i.test(userQuery);
       queryAnalysis = {
+        requiresCodebase: requiresCodebase,
         widgetReference: userQuery.toLowerCase().includes('selected') ? 'selected' : 'specific-name',
         action: userQuery.match(/tap|click|change|press|select/i)?.[0]?.toLowerCase() || undefined,
         informationNeeded: ['properties', 'styles', 'events', 'behavior'],
-        executionPlan: ['current-page-state', 'file-operations', 'page-agent'],
+        executionPlan: requiresCodebase ? ['codebase-agent'] : ['current-page-state', 'file-operations', 'page-agent'],
       };
     }
     
@@ -106,14 +176,75 @@ Return a JSON object with:
       researchSteps: updateStep(state.researchSteps, 'query-analysis', 'completed'),
     };
   } catch (error) {
+    // Fallback: check if query mentions codebase/platform concepts
+    const requiresCodebase = /how.*work|how.*disable|how.*style|default.*style|class.*name|ripple|codebase|platform|runtime|basecomponent|binding/i.test(userQuery);
     return {
       queryAnalysis: {
+        requiresCodebase: requiresCodebase,
         widgetReference: 'selected',
         informationNeeded: ['properties', 'styles', 'events', 'behavior'],
-        executionPlan: ['current-page-state', 'file-operations', 'page-agent'],
+        executionPlan: requiresCodebase ? ['codebase-agent'] : ['current-page-state', 'file-operations', 'page-agent'],
       },
       researchSteps: updateStep(state.researchSteps, 'query-analysis', 'failed'),
       errors: [...(state.errors || []), handleError('query-analysis', error as Error)],
+    };
+  }
+}
+
+/**
+ * Invoke Codebase Agent Node
+ * Routes to Codebase Agent when query requires codebase knowledge
+ */
+async function invokeCodebaseAgentNode(
+  state: InformationRetrievalAgentState
+): Promise<Partial<InformationRetrievalAgentState>> {
+  const stepId = 'codebase-agent';
+  const updatedSteps = updateStep(state.researchSteps, stepId, 'in-progress');
+  
+  console.log('[IR Agent] Routing to Codebase Agent for query:', state.userQuery.substring(0, 50));
+  
+  // Emit step update
+  if (state.onStepUpdate) {
+    state.onStepUpdate({
+      type: 'step',
+      data: { researchSteps: updatedSteps },
+    });
+  }
+  
+  try {
+    if (!state.channelId) {
+      throw new Error('Channel ID is required for Codebase Agent');
+    }
+    
+    // Invoke Codebase Agent with streaming callback
+    const codebaseResult = await sendMessageWithCodebaseAgentStreaming(
+      state.userQuery,
+      state.channelId,
+      state.onStepUpdate, // Pass through step updates
+      state.conversationHistory // Pass conversation history
+    );
+    
+    console.log('[IR Agent] Codebase Agent completed:', {
+      success: codebaseResult.success,
+      messageLength: codebaseResult.message?.length || 0,
+      stepsCount: codebaseResult.researchSteps?.length || 0,
+    });
+    
+    // Merge Codebase Agent steps into IR Agent steps
+    const mergedSteps = updateStep(updatedSteps, stepId, 'completed');
+    const allSteps = [...mergedSteps, ...(codebaseResult.researchSteps || [])];
+    
+    return {
+      finalAnswer: codebaseResult.message || 'Unable to generate answer from Codebase Agent.',
+      researchSteps: allSteps,
+      errors: codebaseResult.errors || state.errors || [],
+    };
+  } catch (error) {
+    console.error('[IR Agent] Codebase Agent error:', error);
+    return {
+      finalAnswer: `Error invoking Codebase Agent: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      researchSteps: updateStep(updatedSteps, stepId, 'failed'),
+      errors: [...(state.errors || []), handleError(stepId, error as Error)],
     };
   }
 }
@@ -835,7 +966,24 @@ async function synthesizeAnswerNode(
     const ai = createGeminiClient();
     const modelName = (typeof process !== 'undefined' ? process.env?.GEMINI_MODEL : undefined) || 'gemini-2.5-flash-lite';
     
-    const synthesisPrompt = `Answer this question directly and concisely: "${state.userQuery}"
+    // Build conversation context if available
+    let conversationContext = '';
+    if (state.conversationHistory && state.conversationHistory.length > 0) {
+      conversationContext = '\n\nPrevious conversation:\n';
+      const recentHistory = state.conversationHistory.slice(-6);
+      recentHistory.forEach(msg => {
+        const role = msg.role === 'user' ? 'User' : 'Assistant';
+        const text = msg.parts?.[0]?.text || '';
+        if (text) {
+          conversationContext += `${role}: ${text}\n`;
+        }
+      });
+      conversationContext += '\n**IMPORTANT**: Consider the previous conversation when answering. ';
+      conversationContext += 'If the current query uses words like "this", "that", "it", "from script", etc., determine what they refer to based on the conversation history. ';
+      conversationContext += 'If the user is asking how to do something programmatically that was mentioned in the previous conversation, provide information about how to accomplish it from code/script.\n';
+    }
+    
+    const synthesisPrompt = `Answer this question directly and concisely: "${state.userQuery}"${conversationContext}
 
 Context:
 - Selected Widget: ${state.currentPageState?.selectedWidget?.widgetName || 'None'}
@@ -850,21 +998,32 @@ Event Handlers Found:
 ${JSON.stringify(state.pageAgentAnalysis?.eventHandlers || {}, null, 2)}
 
 INSTRUCTIONS:
-1. Read the user's question carefully and answer ONLY what they asked
-2. Find the widget "${state.currentPageState?.selectedWidget?.widgetName || 'mentioned in the query'}" in the component file
-3. Look for event handlers (onTap, onClick, onChange, etc.) in the component file
-4. If the handler calls a function, find that function in script.js
-5. If the handler calls an action (fragment.Actions.*), check variables.js to understand what it does
-6. Focus on WHAT HAPPENS when the action is performed - explain the behavior, not all the details
+1. **Analyze the query context**:
+   - If the query uses words like "this", "that", "it", "from script", "programmatically", determine what they refer to from the conversation history
+   - If the query asks how to do something "from script" or "programmatically", identify what platform feature/mechanism was mentioned in the previous conversation
+
+2. **Answer the question**:
+   - If the query asks about HOW to invoke platform features from script (e.g., "how to invoke actions from script?", "how to do this from script?"), and the previous conversation mentioned platform features like actions, navigation, etc., then you need to explain that this requires understanding the platform's runtime mechanisms. However, if you cannot find the specific implementation details in the provided files, you should indicate that this requires CODEBASE knowledge to understand how these platform features work programmatically.
+   - If the query asks about WHAT happens in the application (e.g., "what happens when I tap?", "what properties does this widget have?"), use the provided files to answer
+   - Read the user's question carefully and answer ONLY what they asked
+
+3. **Use the provided files**:
+   - Find the widget "${state.currentPageState?.selectedWidget?.widgetName || 'mentioned in the query'}" in the component file
+   - Look for event handlers (onTap, onClick, onChange, etc.) in the component file
+   - If the handler calls a function, find that function in script.js
+   - If the handler calls an action (fragment.Actions.*), check variables.js to understand what it does
+
+4. **When to recommend Codebase Agent**:
+   - If the query asks how to invoke platform features programmatically (actions, navigation, etc.) and you cannot find the implementation details in the application files
+   - If the query asks about HOW platform mechanisms work (not just what happens in the app)
+   - Clearly indicate when CODEBASE knowledge is needed to answer the question completely
 
 RESPONSE FORMAT:
 - Start with a direct answer to the question
-- Explain what happens based on the code you found
+- If you can answer from the provided files, explain what happens based on the code you found
+- If the query requires understanding platform mechanisms/programmatic APIs that aren't in the application files, explain that CODEBASE knowledge is needed and what specifically needs to be understood
 - Only include details (properties, styles, location) if they're directly relevant to answering the question
 - Be concise - avoid listing everything about the widget unless asked
-
-Example for "what happens when I tap":
-"When you tap on [widget], it [action]. This happens because [brief explanation of the code/handler]."
 
 Do not include:
 - Full property lists unless specifically asked
@@ -878,10 +1037,20 @@ Do not include:
         temperature: 0.3,
         seed: getAISeed(),
       },
-      contents: [{
+      contents: [
+        // Include conversation history as context
+        ...(state.conversationHistory && state.conversationHistory.length > 0 
+          ? state.conversationHistory.slice(-6).map(msg => ({
+              role: msg.role === 'user' ? 'user' : 'model',
+              parts: msg.parts || [{ text: '' }]
+            }))
+          : []
+        ),
+        {
         role: 'user',
         parts: [{ text: synthesisPrompt }],
-      }],
+        }
+      ],
     });
     
     // Extract text from Gemini response
@@ -933,6 +1102,21 @@ Do not include:
 /**
  * Routing Functions
  */
+function routeAfterQueryAnalysis(state: InformationRetrievalAgentState): string {
+  const requiresCodebase = state.queryAnalysis?.requiresCodebase === true;
+  
+  console.log('[IR Agent] Routing after query analysis:', {
+    requiresCodebase,
+    executionPlan: state.queryAnalysis?.executionPlan,
+  });
+  
+  if (requiresCodebase || state.queryAnalysis?.executionPlan?.includes('codebase-agent')) {
+    return 'codebase-agent';
+  }
+  
+  return 'current-page-state';
+}
+
 function routeAfterPageState(state: InformationRetrievalAgentState): string {
   console.log('[IR Agent] Routing after page state:', {
     hasPageName: !!state.currentPageState?.pageName,
@@ -987,6 +1171,7 @@ export function createInformationRetrievalAgent(
       userQuery: { reducer: (x: string, y?: string) => y ?? x },
       channelId: { reducer: (x?: string, y?: string) => y ?? x },
       projectLocation: { reducer: (x?: string, y?: string) => y ?? x },
+      conversationHistory: { reducer: (x?: any[], y?: any[]) => y ?? x },
       queryAnalysis: { reducer: (x?: any, y?: any) => y ?? x },
       currentPageState: { reducer: (x?: any, y?: any) => y ? { ...x, ...y } : x },
       pageFiles: { 
@@ -1007,6 +1192,7 @@ export function createInformationRetrievalAgent(
     },
   } as any)
     .addNode('query-analyzer', queryAnalyzerNode as any)
+    .addNode('codebase-agent', invokeCodebaseAgentNode as any)
     .addNode('current-page-state', invokeCurrentPageStateAgent as any)
     .addNode('resolve-page-name', resolvePageNameNode as any)
     // Explicit LangGraph tool chaining nodes - no LLM interpretation needed
@@ -1022,7 +1208,11 @@ export function createInformationRetrievalAgent(
     .addNode('answer-synthesis', synthesizeAnswerNode as any)
     
     .addEdge(START, 'query-analyzer')
-    .addEdge('query-analyzer', 'current-page-state')
+    .addConditionalEdges('query-analyzer', routeAfterQueryAnalysis as any, {
+      'codebase-agent': 'codebase-agent',
+      'current-page-state': 'current-page-state',
+    })
+    .addEdge('codebase-agent', END)
     .addConditionalEdges('current-page-state', routeAfterPageState as any, {
       'resolve-page-name': 'resolve-page-name',
       'find-component-file': 'find-component-file',
@@ -1066,6 +1256,7 @@ export async function sendMessageWithInformationRetrievalAgent(
     userQuery: message,
     channelId,
     projectLocation,
+    conversationHistory: history,
     researchSteps: [],
     errors: [],
   };
@@ -1102,6 +1293,7 @@ export async function sendMessageWithInformationRetrievalAgentStreaming(
     userQuery: message,
     channelId,
     projectLocation,
+    conversationHistory: history,
     researchSteps: [],
     errors: [],
     onStepUpdate,

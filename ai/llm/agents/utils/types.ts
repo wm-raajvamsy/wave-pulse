@@ -15,9 +15,11 @@ export interface InformationRetrievalAgentState {
   userQuery: string;
   channelId?: string;
   projectLocation?: string;
+  conversationHistory?: Array<{ role: 'user' | 'model'; parts: Array<{ text?: string }> }>; // Chat history for context
   
   // Query Analysis
   queryAnalysis?: {
+    requiresCodebase?: boolean; // Whether query requires codebase knowledge
     widgetReference?: string; // 'selected' | 'specific-name' | widget name
     action?: string; // 'tap' | 'click' | 'change' | etc.
     informationNeeded?: string[]; // 'properties' | 'styles' | 'events' | 'behavior'
