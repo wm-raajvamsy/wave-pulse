@@ -15,9 +15,10 @@ import {
 import { createCurrentPageStateAgent } from './current-page-state-agent';
 import { createPageAgent } from './page-agent';
 import { getAllToolSchemas, executeTool } from '../tools';
-import { SYSTEM_INSTRUCTION_WITH_TOOLS } from '../prompts';
+import { SYSTEM_INSTRUCTION_WITH_TOOLS, COMMON_CONTEXT_PROMPT } from '../prompts';
 import { getAISeed } from '../config';
 import { sendMessageWithCodebaseAgentStreaming } from './codebase-agent/api';
+import { executeWithOrchestration } from './execution-engine';
 
 /**
  * Query Analyzer Node
@@ -50,9 +51,18 @@ async function queryAnalyzerNode(
       });
     }
     
-    const analysisPrompt = `Analyze this query: "${userQuery}"${conversationContext}
+    const analysisPrompt = `${COMMON_CONTEXT_PROMPT}
 
-CRITICAL: First determine if this query requires understanding the WaveMaker React Native codebase (runtime/platform code) or if it's about the current application's pages/widgets.
+---
+
+## QUERY ANALYSIS TASK
+
+Analyze this query: "${userQuery}"${conversationContext}
+
+CRITICAL: Determine the best approach to answer this query. Consider these options in order:
+1. Can this be answered with DIRECT TOOLS (get_ui_layer_data, select_widget, etc.)?
+2. Does this require APPLICATION file analysis (component.js, script.js, variables.js)?
+3. Does this require CODEBASE knowledge (WaveMaker React Native platform/runtime)?
 
 **ANALYSIS PROCESS:**
 
@@ -61,17 +71,24 @@ CRITICAL: First determine if this query requires understanding the WaveMaker Rea
    - If the current query uses words like "this", "that", "it", "from script", "programmatically", etc., determine what they refer to based on the conversation history
    - Identify any platform features, mechanisms, or APIs mentioned in the conversation
 
-2. **Determine if CODEBASE knowledge is needed**:
+2. **Check if query needs RUNTIME DATA (use direct tools, not file analysis)**:
+   - Does the query ask about "currently", "now", "shown", "displayed" data?
+   - Does it ask "how many items", "list the data", "what data is shown"?
+   - Does it ask about current state, live data, or runtime values?
+   - **IF YES**: This needs get_ui_layer_data('components') or eval_expression, NOT file analysis
+   - Mark as requiresDirectTools: true
+
+3. **Determine if CODEBASE knowledge is needed**:
    - Does this query ask about HOW platform features work internally?
    - Does this query ask about HOW to use platform APIs/programming mechanisms?
    - Does this query ask about platform architecture, implementation details, or runtime behavior?
    - Does this query ask about invoking platform features from code/script?
    - Does this query ask about understanding platform mechanisms (actions, navigation, bindings, etc.)?
 
-3. **Determine if APPLICATION knowledge is needed**:
-   - Does this query ask about specific widgets/pages in the user's application?
-   - Does this query ask about application-specific code, variables, or events?
-   - Does this query ask about what happens in the user's specific app?
+4. **Determine if APPLICATION file analysis is needed**:
+   - Does this query ask about code structure, event handlers, or widget configuration?
+   - Does this query ask about what happens in the user's specific app code?
+   - Does this query need to understand scripts, variables, or page files?
 
 **EXAMPLES OF CODEBASE QUERIES:**
 - Questions about how platform features work ("how does [feature] work?")
@@ -79,10 +96,16 @@ CRITICAL: First determine if this query requires understanding the WaveMaker Rea
 - Questions about platform mechanisms ("how do actions work?", "how does navigation work?")
 - Questions about architecture and internals ("how is [feature] implemented?")
 
-**EXAMPLES OF APPLICATION QUERIES:**
-- Questions about specific widgets ("what happens when I tap this button?")
-- Questions about application structure ("what properties does this widget have?")
-- Questions about application-specific code ("what does this script do?")
+**EXAMPLES OF RUNTIME DATA QUERIES (use direct tools):**
+- "How many users are currently shown?" → get_ui_layer_data('components') or eval_expression
+- "List the data displayed in the list" → get_ui_layer_data('components')
+- "What items are shown right now?" → get_ui_layer_data('components')
+- "Show me current console errors" → get_ui_layer_data('console')
+
+**EXAMPLES OF APPLICATION FILE ANALYSIS QUERIES:**
+- Questions about code structure ("what happens when I tap this button?" - needs script analysis)
+- Questions about event handlers ("what does this button do?" - needs component.js analysis)
+- Questions about application-specific code ("what does this script do?" - needs script.js analysis)
 
 ${conversationHistory && conversationHistory.length > 0 ? `
 
@@ -95,13 +118,16 @@ ${conversationHistory && conversationHistory.length > 0 ? `
 
 Return a JSON object with:
 {
+  "requiresDirectTools": true | false,  // TRUE if query asks about current/runtime data
   "requiresCodebase": true | false,
   "widgetReference": "selected" | "specific-name" | widget name | null,
   "action": "tap" | "click" | "change" | etc. | null,
-  "informationNeeded": ["properties", "styles", "events", "behavior"] | null,
-  "executionPlan": ["codebase-agent"] | ["current-page-state", "file-operations", "page-agent"],
-  "reasoning": "Brief explanation of why codebase or application knowledge is needed"
-}`;
+  "informationNeeded": ["properties", "styles", "events", "behavior", "runtime-data"] | null,
+  "executionPlan": ["direct-tools"] | ["codebase-agent"] | ["current-page-state", "file-operations", "page-agent"],
+  "reasoning": "Brief explanation of approach needed"
+}
+
+CRITICAL: If query mentions "currently", "shown", "displayed", "now", "how many items", "list data", set requiresDirectTools: true and executionPlan: ["direct-tools"]`;
 
     const response = await ai.models.generateContent({
       model: modelName,
@@ -130,13 +156,7 @@ Return a JSON object with:
       analysisText = response.candidates[0].content.parts
         .map(part => part.text || '')
         .join('');
-    } else if (response.text && typeof response.text === 'function') {
-      try {
-        analysisText = response.text();
-      } catch (e) {
-        console.error('[IR Agent] Error calling response.text():', e);
-      }
-    } else if (response.text && typeof response.text === 'string') {
+    } else if (typeof response.text === 'string') {
       analysisText = response.text;
     }
     
@@ -983,7 +1003,13 @@ async function synthesizeAnswerNode(
       conversationContext += 'If the user is asking how to do something programmatically that was mentioned in the previous conversation, provide information about how to accomplish it from code/script.\n';
     }
     
-    const synthesisPrompt = `Answer this question directly and concisely: "${state.userQuery}"${conversationContext}
+    const synthesisPrompt = `${COMMON_CONTEXT_PROMPT}
+
+---
+
+## ANSWER SYNTHESIS TASK
+
+Answer this question directly and concisely: "${state.userQuery}"${conversationContext}
 
 Context:
 - Selected Widget: ${state.currentPageState?.selectedWidget?.widgetName || 'None'}
@@ -1059,14 +1085,7 @@ Do not include:
       answer = response.candidates[0].content.parts
         .map(part => part.text || '')
         .join('');
-    } else if (response.text && typeof response.text === 'function') {
-      // Fallback: try text() method if available
-      try {
-        answer = response.text();
-      } catch (e) {
-        console.error('[IR Agent] Error calling response.text():', e);
-      }
-    } else if (response.text && typeof response.text === 'string') {
+    } else if (typeof response.text === 'string') {
       answer = response.text;
     }
     
@@ -1100,21 +1119,103 @@ Do not include:
 }
 
 /**
+ * Orchestrator Execution Node
+ * Uses the orchestrator + execution engine for adaptive tool/agent chaining
+ */
+async function orchestratorExecutionNode(
+  state: InformationRetrievalAgentState
+): Promise<Partial<InformationRetrievalAgentState>> {
+  console.log('[IR Agent] Starting orchestrator execution');
+  console.log('[IR Agent] Conversation history length:', state.conversationHistory?.length || 0);
+  if (state.conversationHistory && state.conversationHistory.length > 0) {
+    console.log('[IR Agent] Last 2 messages:', state.conversationHistory.slice(-2).map(h => ({
+      role: h.role,
+      textLength: h.parts[0]?.text?.length || 0,
+      textPreview: h.parts[0]?.text?.substring(0, 100)
+    })));
+  }
+  
+  try {
+    // Use the orchestrator execution engine
+    const result = await executeWithOrchestration({
+      userQuery: state.userQuery,
+      channelId: state.channelId,
+      projectLocation: state.projectLocation,
+      conversationHistory: state.conversationHistory,
+      onStepUpdate: state.onStepUpdate,
+    });
+    
+    console.log('[IR Agent] Orchestrator execution complete:', {
+      hasAnswer: !!result.answer,
+      steps: result.executionHistory.length,
+      confidence: result.confidence,
+      pattern: result.pattern,
+    });
+    
+    // Convert execution history to research steps for frontend
+    const researchSteps = result.executionHistory.map((action, idx) => ({
+      id: `orchestrator-step-${idx + 1}`,
+      description: `${action.type}: ${action.name}`,
+      status: (action.error ? 'failed' : 'completed') as 'pending' | 'in-progress' | 'completed' | 'failed',
+      reasoning: action.reasoning,
+    }));
+    
+    // Convert errors if they exist
+    const convertedErrors = result.errors?.map(err => ({
+      step: String(err.step),
+      error: err.error,
+    }));
+    
+    return {
+      finalAnswer: result.answer,
+      researchSteps: researchSteps,
+      errors: convertedErrors,
+    };
+  } catch (error) {
+    console.error('[IR Agent] Orchestrator execution error:', error);
+    return {
+      finalAnswer: `Error during orchestrated execution: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      researchSteps: [
+        {
+          id: 'orchestrator-error',
+          description: 'Orchestrator execution failed',
+          status: 'failed',
+        },
+      ],
+      errors: [{
+        step: 'orchestrator-execution',
+        error: error instanceof Error ? error.message : String(error),
+      }],
+    };
+  }
+}
+
+/**
  * Routing Functions
  */
 function routeAfterQueryAnalysis(state: InformationRetrievalAgentState): string {
+  const requiresDirectTools = state.queryAnalysis?.requiresDirectTools === true;
   const requiresCodebase = state.queryAnalysis?.requiresCodebase === true;
   
   console.log('[IR Agent] Routing after query analysis:', {
+    requiresDirectTools,
     requiresCodebase,
     executionPlan: state.queryAnalysis?.executionPlan,
   });
   
-  if (requiresCodebase || state.queryAnalysis?.executionPlan?.includes('codebase-agent')) {
-    return 'codebase-agent';
+  // Route to orchestrator for runtime data queries (most common case)
+  if (requiresDirectTools || state.queryAnalysis?.executionPlan?.includes('direct-tools')) {
+    return 'orchestrator';
   }
   
-  return 'current-page-state';
+  // Route to orchestrator for codebase queries (it will handle the routing)
+  if (requiresCodebase || state.queryAnalysis?.executionPlan?.includes('codebase-agent')) {
+    return 'orchestrator';
+  }
+  
+  // For file analysis queries, also use orchestrator (it's more adaptive)
+  // The orchestrator will decide whether to use tools or call sub-agents
+  return 'orchestrator';
 }
 
 function routeAfterPageState(state: InformationRetrievalAgentState): string {
@@ -1192,6 +1293,7 @@ export function createInformationRetrievalAgent(
     },
   } as any)
     .addNode('query-analyzer', queryAnalyzerNode as any)
+    .addNode('orchestrator', orchestratorExecutionNode as any)
     .addNode('codebase-agent', invokeCodebaseAgentNode as any)
     .addNode('current-page-state', invokeCurrentPageStateAgent as any)
     .addNode('resolve-page-name', resolvePageNameNode as any)
@@ -1209,9 +1311,11 @@ export function createInformationRetrievalAgent(
     
     .addEdge(START, 'query-analyzer')
     .addConditionalEdges('query-analyzer', routeAfterQueryAnalysis as any, {
+      'orchestrator': 'orchestrator',
       'codebase-agent': 'codebase-agent',
       'current-page-state': 'current-page-state',
     })
+    .addEdge('orchestrator', END)
     .addEdge('codebase-agent', END)
     .addConditionalEdges('current-page-state', routeAfterPageState as any, {
       'resolve-page-name': 'resolve-page-name',

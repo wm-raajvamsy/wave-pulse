@@ -1,12 +1,9 @@
 import { NextRequest } from 'next/server';
-import { sendMessageWithFileOperationsAgentStreaming } from '@/ai/llm/agents/file-operations-agent';
 import { sendMessageWithInformationRetrievalAgentStreaming } from '@/ai/llm/agents/information-retrieval-agent';
-import { sendMessageWithCodebaseAgentStreaming } from '@/ai/llm/agents/codebase-agent';
-import { determineAgentForQuery } from '@/ai/llm/agents/agent-router';
 
 /**
  * Streaming chat endpoint that sends research step updates in real-time
- * Automatically routes to Information Retrieval Agent, File Operations Agent, or Codebase Agent based on query type
+ * Uses the orchestrator which intelligently decides which tools/agents to use
  */
 export async function POST(request: NextRequest) {
   try {
@@ -19,16 +16,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Determine which agent to use using AI-based routing
-    let agentType: 'information-retrieval' | 'file-operations' | 'codebase';
-    try {
-      agentType = await determineAgentForQuery(message);
-      console.log(`[Chat API] AI Router selected: ${agentType} agent for query: "${message.substring(0, 50)}..."`);
-    } catch (error) {
-      console.error('[Chat API] Error in agent router, defaulting to file-operations:', error);
-      agentType = 'file-operations';
-    }
-    const useIRAgent = agentType === 'information-retrieval';
+    // Always use the orchestrator via Information Retrieval Agent
+    // The orchestrator will intelligently decide which tools/agents to use
+    console.log(`[Chat API] Processing query with orchestrator: "${message.substring(0, 50)}..."`);
+
     
     // Create a readable stream for Server-Sent Events
     const stream = new ReadableStream({
@@ -39,11 +30,9 @@ export async function POST(request: NextRequest) {
         
         // Send step updates as they happen
         try {
-          console.log(`[Chat API] Starting agent execution for ${agentType} agent`);
+          console.log(`[Chat API] Starting orchestrator execution`);
           
-          if (agentType === 'information-retrieval') {
-            // Use Information Retrieval Agent
-            finalResult = await sendMessageWithInformationRetrievalAgentStreaming(
+          finalResult = await sendMessageWithInformationRetrievalAgentStreaming(
               message,
               history.map(h => ({
                 role: h.role as 'user' | 'model',
@@ -79,13 +68,13 @@ export async function POST(request: NextRequest) {
               }
             );
             
-            console.log(`[Chat API] IR Agent completed. Final result:`, {
+            console.log(`[Chat API] Orchestrator completed. Final result:`, {
               hasAnswer: !!finalResult?.answer,
               hasMessage: !!finalResult?.message,
               stepsCount: finalResult?.researchSteps?.length || 0,
             });
             
-            // Convert IR Agent response format to match frontend expectations
+            // Convert response format to match frontend expectations
             // Only set finalResult if we haven't already set it from complete event
             if (!finalResult) {
               finalResult = {
@@ -94,65 +83,6 @@ export async function POST(request: NextRequest) {
                 success: true,
               };
             }
-          } else if (agentType === 'codebase') {
-            // Use Codebase Agent
-            finalResult = await sendMessageWithCodebaseAgentStreaming(
-              message,
-              channelId,
-              (update: { type: 'step' | 'complete'; data?: any }) => {
-                // Handle step updates
-                if (update.type === 'step') {
-                  console.log('[Chat API] Codebase Agent step update:', update.data?.researchSteps?.length || update.data?.steps?.length || 0, 'steps');
-                  // Normalize to researchSteps format for frontend consistency
-                  const normalizedUpdate = {
-                    ...update,
-                    data: {
-                      researchSteps: update.data?.researchSteps || update.data?.steps || []
-                    }
-                  };
-                  const chunk = `data: ${JSON.stringify(normalizedUpdate)}\n\n`;
-                  controller.enqueue(encoder.encode(chunk));
-                } else if (update.type === 'complete') {
-                  console.log('[Chat API] Codebase Agent complete event received');
-                  const completeData = {
-                    ...update.data,
-                    message: update.data?.message || 'Unable to generate response.',
-                    researchSteps: update.data?.researchSteps || [],
-                  };
-                  console.log('[Chat API] Sending complete event to frontend:', { 
-                    messageLength: completeData.message?.length || 0,
-                    stepsCount: completeData.researchSteps?.length || 0 
-                  });
-                  const chunk = `data: ${JSON.stringify({ type: 'complete', data: completeData })}\n\n`;
-                  controller.enqueue(encoder.encode(chunk));
-                  finalResult = completeData;
-                }
-              },
-              history.map(h => ({
-                role: h.role as 'user' | 'model',
-                parts: [{ text: h.content }],
-              }))
-            );
-          } else {
-            // Use File Operations Agent
-          finalResult = await sendMessageWithFileOperationsAgentStreaming(
-            message,
-            history,
-            channelId,
-            projectLocation,
-            (update: { type: 'step' | 'complete'; data?: any }) => {
-              const chunk = `data: ${JSON.stringify(update)}\n\n`;
-              controller.enqueue(encoder.encode(chunk));
-            }
-          );
-          }
-          
-          // Send final result (only if we haven't already sent it via complete event)
-          if (finalResult && agentType !== 'information-retrieval' && agentType !== 'codebase') {
-            // For File Operations Agent, send final event
-          const finalChunk = `data: ${JSON.stringify({ type: 'final', data: finalResult })}\n\n`;
-          controller.enqueue(encoder.encode(finalChunk));
-          }
         } catch (error) {
           const errorChunk = `data: ${JSON.stringify({ 
             type: 'error', 

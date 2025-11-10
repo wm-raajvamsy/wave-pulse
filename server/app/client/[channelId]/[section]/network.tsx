@@ -190,19 +190,23 @@ export const Network = (props: Props) => {
             return;
         }
         const resContentType = selectedReq.res.headers["content-type"] as string;
-        if (resContentType?.indexOf('application/json') >= 0) {
-            const data = selectedReq.res.data;
+        const data = selectedReq.res.data;
+        
+        // Always ensure response is a string, not an object
+        if (typeof data === 'object' && data !== null) {
+            // If data is an object, stringify it
+            setResponse(JSON.stringify(data, null, 4));
+        } else if (resContentType?.indexOf('application/json') >= 0) {
             if (typeof data === 'string') {
-                setResponse(JSON.stringify(JSON.parse(selectedReq.res.data || '{}'), null, 4))
+                setResponse(JSON.stringify(JSON.parse(data || '{}'), null, 4))
             } else {
                 setResponse(JSON.stringify(data, null, 4))
             }
-            
         } else if (resContentType?.indexOf('text/') >= 0
             || resContentType?.indexOf('application/javascript') >= 0) {
-            setResponse(selectedReq.res.data);
+            setResponse(data || '');
         } else {
-            setResponse('');
+            setResponse(data?.toString() || '');
         }
     }, [selectedReq]);
     const startTime = ((props.requests[0]?.req as any)?.__startTime || 0);

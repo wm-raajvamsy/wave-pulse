@@ -1,10 +1,16 @@
 import { createGeminiClient } from '@/ai/llm/gemini';
 import { getAISeed } from '@/ai/llm/config';
+import { COMMON_CONTEXT_PROMPT } from '@/ai/llm/prompts/common-context';
 
 /**
  * AI-based agent router
- * Uses Gemini to intelligently determine which agent should handle the query
+ * Uses Gemini with fixed seed to intelligently determine which agent should handle the query
  * Returns: 'information-retrieval' | 'file-operations' | 'codebase'
+ * 
+ * NOTE: This provides the initial routing decision. Once a query reaches an agent,
+ * the orchestrator takes over and can dynamically switch between agents, tools, and
+ * sub-agents based on what's learned during execution. This adaptive behavior enables
+ * intelligent tool chaining following WaveMaker data flow patterns.
  */
 export async function determineAgentForQuery(
   message: string,
@@ -14,30 +20,41 @@ export async function determineAgentForQuery(
     const ai = createGeminiClient();
     const modelName = (typeof process !== 'undefined' ? process.env?.GEMINI_MODEL : undefined) || 'gemini-2.5-flash-lite';
     
-    const routingPrompt = `You are an intelligent agent router. Your job is to analyze user queries and determine which specialized agent should handle them.
+    const routingPrompt = `${COMMON_CONTEXT_PROMPT}
 
-Available Agents:
-1. **Information Retrieval Agent**: Use this for questions about:
-   - Widget behavior, events, and interactions ("what happens when I tap...", "what does this button do?")
-   - Widget properties and styles ("show me widget properties", "what styles are applied?")
-   - Component tree and UI state ("what is the selected widget?", "show me the component tree")
-   - Page structure and relationships ("how are widgets connected?", "what events are bound?")
-   - General questions about UI elements and their behavior
+---
 
-2. **File Operations Agent**: Use this for:
-   - File manipulation tasks ("read file X", "edit file Y", "find files")
-   - Code modifications ("change this code", "add this function")
-   - File system operations ("create file", "delete file", "list directory")
-   - Searching code ("search for pattern", "grep files")
-   - Any task that requires reading, writing, or modifying files
+## ROUTING TASK
 
-3. **Codebase Agent**: Use this for questions about:
-   - How things work in the codebase ("how does BaseComponent work?", "how does two-way binding work?")
-   - Why things are designed a certain way ("why does BaseComponent use PropsProvider?")
-   - What something is ("what is WmButton?", "what are the default button styles?")
-   - Where something is located ("where is NavigationService implemented?")
-   - Codebase architecture and internals ("how does the transpiler convert HTML to JSX?")
-   - Style definitions and class names ("what is the class name for button icon?", "how do I style icon inside a button?")
+You are an intelligent agent router. Your job is to analyze user queries and determine which specialized agent should handle them.
+
+IMPORTANT: Consider if the query can be answered with DIRECT TOOLS first before routing to agents.
+
+Routing Options:
+1. **Information Retrieval Agent** (with orchestrator): Use for any UI/application questions
+   - Simple queries: "show console errors", "how many users are shown?", "what's selected?"
+   - Complex queries: "what happens when I tap...", "what does this button do?"
+   - The IR agent now uses an orchestrator that adaptively decides whether to use direct tools,
+     file analysis, or sub-agents based on what's needed
+   → The orchestrator handles tool chaining intelligently following WaveMaker patterns
+
+2. **Information Retrieval Agent**: ALL application/UI queries route here
+   - Widget behavior and event analysis: "what happens when I tap...", "what does this button do?"
+   - Page structure analysis: "how are widgets connected?", "what events are bound?"
+   - Questions requiring page file analysis (component.js, script.js, variables.js)
+   - Questions that need synthesizing information from multiple sources
+
+3. **File Operations Agent**: Use for multi-step file modifications
+   - Multiple file operations: "find all buttons and change their color"
+   - Iterative file processing: "update all API endpoints in the project"
+   - Complex file modifications requiring planning and multiple tool chains
+   - NOT for simple single-file reads or edits (use direct tools)
+
+4. **Codebase Agent**: Use for WaveMaker platform/codebase questions
+   - Platform architecture: "how does BaseComponent work?", "how does two-way binding work?"
+   - Platform APIs: "how do I use Actions.navigate?", "how do Variables work?"
+   - Style definitions: "what is the class name for button icon?"
+   - Codebase internals: "how does the transpiler convert HTML to JSX?"
    - Any question about the WaveMaker React Native codebase implementation, architecture, or design
 
 User Query: "${message}"

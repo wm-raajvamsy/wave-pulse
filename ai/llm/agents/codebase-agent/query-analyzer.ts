@@ -6,6 +6,7 @@
 import { createGeminiClient } from '../../gemini';
 import { getAISeed } from '../../config';
 import { QueryAnalysis } from './types';
+import { COMMON_CONTEXT_PROMPT } from '../../prompts/common-context';
 
 export class QueryAnalyzer {
   private systemPrompt: string;
@@ -67,26 +68,16 @@ export class QueryAnalyzer {
       ]
     });
     
-    // Parse JSON response
-    const content = response.response?.text || '';
-    console.log('[QueryAnalyzer] AI raw response:', content.substring(0, 200));
-    
-    // Try multiple response formats
+    // Parse JSON response - extract text from candidates
     let responseText = '';
-    if (response.response?.text) {
-      responseText = response.response.text;
-    } else if (response.candidates && response.candidates[0]?.content?.parts) {
+    if (response.candidates && response.candidates[0]?.content?.parts) {
       responseText = response.candidates[0].content.parts
         .map(part => part.text || '')
         .join('');
-    } else if (response.text) {
-      responseText = typeof response.text === 'function' ? response.text() : response.text;
-    } else if (response.candidates && response.candidates[0]?.text) {
-      responseText = response.candidates[0].text;
     }
     
+    console.log('[QueryAnalyzer] AI raw response:', responseText.substring(0, 200));
     console.log('[QueryAnalyzer] Extracted response text, length:', responseText.length);
-    console.log('[QueryAnalyzer] Response text preview:', responseText.substring(0, 200));
     
     let analysis;
     
@@ -110,7 +101,13 @@ export class QueryAnalyzer {
    * Builds system prompt for query analysis
    */
   private buildSystemPrompt(): string {
-    return `You are an expert query analyzer for the WaveMaker React Native codebase.
+    return `${COMMON_CONTEXT_PROMPT}
+
+---
+
+## CODEBASE QUERY ANALYSIS TASK
+
+You are an expert query analyzer for the WaveMaker React Native codebase.
 
 Your task is to analyze user queries and extract structured information:
 

@@ -17,6 +17,10 @@ export {
   sendMessageWithFileOperationsAgentStreaming
 } from './file-operations-agent';
 
+// Export orchestrator and execution engine
+export { orchestrate } from './orchestrator-agent';
+export { executeWithOrchestration } from './execution-engine';
+
 // Export types
 export type {
   InformationRetrievalAgentState,
@@ -25,4 +29,6 @@ export type {
 } from './utils/types';
 
 export type { FileOperationsAgentState } from './file-operations-agent';
+export type { OrchestratorDecision, ExecutionAction } from './orchestrator-agent';
+export type { ExecutionContext, ExecutionResult } from './execution-engine';
 

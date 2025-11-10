@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendMessageWithFileOperationsAgent } from '@/ai/llm/agents/file-operations-agent';
 import { sendMessageWithInformationRetrievalAgent } from '@/ai/llm/agents/information-retrieval-agent';
-import { sendMessageWithCodebaseAgent } from '@/ai/llm/agents/codebase-agent';
-import { determineAgentForQuery } from '@/ai/llm/agents/agent-router';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,53 +12,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Determine which agent to use using AI-based routing
-    const agentType = await determineAgentForQuery(message);
+    // Always use the orchestrator via Information Retrieval Agent
+    // The orchestrator will intelligently decide which tools/agents to use
+    console.log(`[Chat API] Processing query with orchestrator: "${message.substring(0, 50)}..."`);
     
-    console.log(`[Chat API] AI Router selected: ${agentType} agent for query: "${message.substring(0, 50)}..."`);
-    
-    let result: any;
-    
-    if (agentType === 'information-retrieval') {
-      // Use Information Retrieval Agent
-      const irResult = await sendMessageWithInformationRetrievalAgent(
-        message,
-        history.map(h => ({
-          role: h.role as 'user' | 'model',
-          parts: [{ text: h.content }],
-        })),
-        channelId,
-        projectLocation
-      );
-      
-      // Convert IR Agent response format to match frontend expectations
-      result = {
-        message: irResult.answer || 'Unable to generate answer.',
-        researchSteps: irResult.researchSteps || [],
-        success: true,
-      };
-    } else if (agentType === 'codebase') {
-      // Use Codebase Agent
-      const codebaseResult = await sendMessageWithCodebaseAgent(
-        message,
-        channelId
-      );
-      
-      result = {
-        message: codebaseResult.message,
-        researchSteps: codebaseResult.researchSteps || [],
-        success: codebaseResult.success,
-        errors: codebaseResult.errors
-      };
-    } else {
-      // Use File Operations Agent
-      result = await sendMessageWithFileOperationsAgent(
+    const irResult = await sendMessageWithInformationRetrievalAgent(
       message,
-      history,
+      history.map(h => ({
+        role: h.role as 'user' | 'model',
+        parts: [{ text: h.content }],
+      })),
       channelId,
       projectLocation
     );
-    }
+    
+    // Convert IR Agent response format to match frontend expectations
+    const result = {
+      message: irResult.answer || 'Unable to generate answer.',
+      researchSteps: irResult.researchSteps || [],
+      success: true,
+    };
 
     return NextResponse.json(result, {
       status: 200,

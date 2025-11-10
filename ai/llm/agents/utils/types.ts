@@ -19,6 +19,7 @@ export interface InformationRetrievalAgentState {
   
   // Query Analysis
   queryAnalysis?: {
+    requiresDirectTools?: boolean; // Whether query requires direct tools (runtime data)
     requiresCodebase?: boolean; // Whether query requires codebase knowledge
     widgetReference?: string; // 'selected' | 'specific-name' | widget name
     action?: string; // 'tap' | 'click' | 'change' | etc.
@@ -39,12 +40,16 @@ export interface InformationRetrievalAgentState {
     elementTree?: WidgetNode; // Basic info for all widgets
   };
   
-  // Page Files
+  // Page Files (includes temporary path storage for tool chaining)
   pageFiles?: {
     component?: string; // Main.component.js content
     styles?: string;    // Main.styles.js content
     script?: string;    // Main.script.js content
     variables?: string; // Main.variables.js content
+    _componentFilePath?: string; // Temporary storage for file path
+    _stylesFilePath?: string;    // Temporary storage for file path
+    _scriptFilePath?: string;    // Temporary storage for file path
+    _variablesFilePath?: string; // Temporary storage for file path
   };
   
   // Page Agent Analysis

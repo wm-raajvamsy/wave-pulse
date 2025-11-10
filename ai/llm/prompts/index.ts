@@ -7,4 +7,10 @@ export { FINAL_RESPONSE_SYSTEM_INSTRUCTION } from './final-response-system-instr
 export { UI_LAYER_DATA_TOOL_DESCRIPTION } from './tool-description';
 export { buildContinuationPrompt } from './continuation-prompt';
 export type { ContinuationPromptContext } from './continuation-prompt';
+export { 
+  COMMON_CONTEXT_PROMPT, 
+  TOOL_CHAINING_GUIDELINES, 
+  AGENT_CHAINING_GUIDELINES,
+  getCompleteContextPrompt 
+} from './common-context';
 
