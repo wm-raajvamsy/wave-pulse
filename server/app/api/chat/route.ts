@@ -31,6 +31,10 @@ export async function POST(request: NextRequest) {
       message: irResult.answer || 'Unable to generate answer.',
       researchSteps: irResult.researchSteps || [],
       success: true,
+      sessionId: irResult.sessionId,
+      logPath: irResult.logPath,
+      answerQuality: irResult.answerQuality,
+      confidence: irResult.confidence,
     };
 
     return NextResponse.json(result, {

@@ -53,6 +53,10 @@ export async function POST(request: NextRequest) {
                     ...update.data,
                     message: update.data?.answer || update.data?.message || 'Unable to generate answer.',
                     researchSteps: update.data?.researchSteps || [],
+                    sessionId: update.data?.sessionId,
+                    logPath: update.data?.logPath,
+                    answerQuality: update.data?.answerQuality,
+                    confidence: update.data?.confidence,
                   };
                   // Remove answer field if it exists (we have message now)
                   delete completeData.answer;

@@ -63,7 +63,8 @@ export async function orchestrate(
   executionHistory: ExecutionAction[],
   channelId?: string,
   projectLocation?: string,
-  conversationHistory?: Array<{ role: 'user' | 'model'; parts: Array<{ text?: string }> }>
+  conversationHistory?: Array<{ role: 'user' | 'model'; parts: Array<{ text?: string }> }>,
+  matchingPattern?: any
 ): Promise<OrchestratorDecision> {
   console.log(`[Orchestrator] Query: "${userQuery}"`);
   console.log(`[Orchestrator] Execution history steps: ${executionHistory.length}`);
@@ -120,6 +121,10 @@ Result: ${resultText}
       }).join('\n\n')}\n`
     : '';
   
+  const patternContext = matchingPattern
+    ? `\n## MATCHING PATTERN FOUND\n\nA similar successful query pattern was found:\n- **Query Type**: ${matchingPattern.queryType}\n- **Intent**: ${matchingPattern.intent}\n- **Successful Steps**: ${matchingPattern.successfulSteps.join(' → ')}\n- **Tools Used**: ${matchingPattern.toolSequence.join(', ')}\n- **Average Confidence**: ${matchingPattern.averageConfidence}%\n- **Success Rate**: ${matchingPattern.successCount}/${matchingPattern.usageCount} (${Math.round(matchingPattern.successCount / matchingPattern.usageCount * 100)}%)\n\n**Consider following this proven pattern** but adapt as needed for the specific query.\n`
+    : '';
+  
   const prompt = `You are an intelligent orchestrator for a WaveMaker React Native application analysis system.
 
 Your job is to analyze what information has been collected so far and decide the next action to take.
@@ -131,6 +136,7 @@ Your job is to analyze what information has been collected so far and decide the
 "${userQuery}"
 
 ${conversationContext}
+${patternContext}
 ${historyContext}
 
 ---

@@ -17,6 +17,8 @@ import { sendMessageWithCodebaseAgentStreaming } from './codebase-agent/api';
 import { sendMessageWithFileOperationsAgentStreaming } from './file-operations-agent';
 import { createCurrentPageStateAgent } from './current-page-state-agent';
 import { createPageAgent } from './page-agent';
+import { SessionLogger, Evidence, ExecutionStep } from './utils/session-logger';
+import { PatternStore } from './utils/pattern-store';
 
 const MAX_EXECUTION_STEPS = 15;
 
@@ -34,6 +36,10 @@ export interface ExecutionResult {
   confidence: number;
   pattern?: string;
   errors?: Array<{ step: number; error: string }>;
+  sessionId: string;
+  logPath: string;
+  answerQuality: string;
+  issuesDetected: string[];
 }
 
 /**
@@ -46,6 +52,24 @@ export async function executeWithOrchestration(
   const { userQuery, channelId, projectLocation, conversationHistory, onStepUpdate } = context;
   
   console.log('[Execution Engine] Starting orchestrated execution for query:', userQuery.substring(0, 100));
+  
+  // Create session logger
+  const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const sessionLogger = new SessionLogger(sessionId, userQuery);
+  await sessionLogger.init();
+  
+  console.log(`[Execution Engine] Session ID: ${sessionId}`);
+  
+  // Initialize pattern store
+  const patternStore = new PatternStore();
+  await patternStore.init();
+  
+  // Try to find matching pattern
+  const matchingPattern = await patternStore.findMatchingPattern(userQuery);
+  if (matchingPattern) {
+    console.log(`[Execution Engine] Found matching pattern: ${matchingPattern.id}`);
+    sessionLogger.logPatternMatch(matchingPattern.id);
+  }
   
   const executionHistory: ExecutionAction[] = [];
   const errors: Array<{ step: number; error: string }> = [];
@@ -60,6 +84,8 @@ export async function executeWithOrchestration(
     
     console.log(`[Execution Engine] ========== Step ${currentStep} ==========`);
     
+    const stepStartTime = Date.now();
+    
     try {
       // Step 1: Ask orchestrator what to do next
       const decision = await orchestrate(
@@ -67,7 +93,8 @@ export async function executeWithOrchestration(
         executionHistory,
         channelId,
         projectLocation,
-        conversationHistory
+        conversationHistory,
+        matchingPattern
       );
       
       console.log('[Execution Engine] Orchestrator decision:', {
@@ -177,6 +204,37 @@ export async function executeWithOrchestration(
       // Add to history
       executionHistory.push(action);
       
+      // Log step to session logger
+      const stepDuration = (Date.now() - stepStartTime) / 1000;
+      const evidenceFound = extractEvidence(action);
+      const evidenceMissing = decision.whatWeMissing || [];
+      
+      const logStep: ExecutionStep = {
+        step: currentStep,
+        name: action.name,
+        type: action.type as 'tool' | 'agent' | 'verification' | 'test',
+        reasoning: action.reasoning,
+        duration: stepDuration,
+        confidence: decision.confidence,
+        whatWeKnow: decision.whatWeKnow || [],
+        whatWeMissing: decision.whatWeMissing || [],
+        evidenceFound,
+        evidenceMissing,
+        result: action.result,
+        error: action.error,
+      };
+      
+      sessionLogger.logStep(logStep);
+      
+      // Detect loop issues
+      if (action.error && decision.confidence < 50) {
+        sessionLogger.detectIssue(
+          `Step ${currentStep} failed with low confidence: ${action.error}`,
+          'high',
+          currentStep
+        );
+      }
+      
       // Notify frontend of progress
       if (onStepUpdate) {
         onStepUpdate({
@@ -222,10 +280,36 @@ export async function executeWithOrchestration(
     finalAnswer = 'I was unable to complete the analysis. Please try rephrasing your question or provide more context.';
   }
   
+  // Finalize session logger
+  sessionLogger.finalize(finalAnswer, finalConfidence);
+  await sessionLogger.generateMarkdown();
+  
+  // Learn from this session
+  try {
+    if (sessionLogger.log.answerQuality === 'HIGH') {
+      await patternStore.storeSuccessfulPattern(sessionLogger.log);
+      if (matchingPattern) {
+        await patternStore.updatePatternSuccess(matchingPattern.id, true);
+      }
+    } else if (sessionLogger.log.answerQuality === 'LOW') {
+      await patternStore.storeFailurePattern(sessionLogger.log);
+      if (matchingPattern) {
+        await patternStore.updatePatternSuccess(matchingPattern.id, false);
+      }
+    }
+  } catch (error) {
+    console.error('[Execution Engine] Error learning from session:', error);
+  }
+  
+  const { json, markdown } = sessionLogger.getFilePaths();
+  
   console.log('[Execution Engine] Execution complete:', {
     totalSteps: executionHistory.length,
     hasAnswer: !!finalAnswer,
     errors: errors.length,
+    answerQuality: sessionLogger.log.answerQuality,
+    sessionId,
+    logPath: markdown,
   });
   
   // Notify frontend of completion
@@ -237,6 +321,9 @@ export async function executeWithOrchestration(
         totalSteps: executionHistory.length,
         confidence: finalConfidence,
         pattern: finalPattern,
+        sessionId,
+        logPath: markdown,
+        answerQuality: sessionLogger.log.answerQuality,
       },
     });
   }
@@ -247,6 +334,10 @@ export async function executeWithOrchestration(
     confidence: finalConfidence,
     pattern: finalPattern,
     errors: errors.length > 0 ? errors : undefined,
+    sessionId,
+    logPath: markdown,
+    answerQuality: sessionLogger.log.answerQuality,
+    issuesDetected: sessionLogger.log.issuesDetected.map(i => i.issue),
   };
 }
 
@@ -382,6 +473,58 @@ function isFileSystemTool(toolName: string): boolean {
     'sed_command',
   ];
   return fileSystemTools.includes(toolName);
+}
+
+/**
+ * Extract evidence from an action result
+ */
+function extractEvidence(action: ExecutionAction): Evidence[] {
+  const evidence: Evidence[] = [];
+  
+  if (!action.result) {
+    return evidence;
+  }
+  
+  // Determine evidence type based on action name
+  if (action.name === 'get_ui_layer_data') {
+    evidence.push({
+      type: 'runtime_data',
+      source: action.name,
+      content: action.result.substring(0, 500),
+      verified: true,
+    });
+  } else if (action.name === 'read_file') {
+    evidence.push({
+      type: 'file_content',
+      source: action.name,
+      content: action.result.substring(0, 500),
+      verified: true,
+    });
+  } else if (action.name === 'grep_files' || action.name === 'find_files') {
+    evidence.push({
+      type: 'code',
+      source: action.name,
+      content: action.result.substring(0, 500),
+      verified: true,
+    });
+  } else if (action.name === 'eval_expression') {
+    evidence.push({
+      type: 'runtime_data',
+      source: action.name,
+      content: action.result.substring(0, 500),
+      verified: true,
+    });
+  } else if (action.type === 'agent') {
+    // Agent results might contain multiple types of evidence
+    evidence.push({
+      type: 'code',
+      source: action.name,
+      content: action.result.substring(0, 500),
+      verified: false, // Needs verification
+    });
+  }
+  
+  return evidence;
 }
 
 /**
