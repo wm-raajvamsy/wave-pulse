@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Button } from "@nextui-org/button";
+import { Button } from "@nextui-org/react";
 
 export const Counter = () => {
   const [count, setCount] = React.useState(0);

@@ -22,8 +22,12 @@ import QRCode from "react-qr-code";
 import { ChevronDownIcon, Plus, PlusFilledIcon } from "@nextui-org/shared-icons";
 import { UIAgent } from "@/wavepulse/ui-agent";
 import { DatabaseExplorer } from "./database-explorer";
+<<<<<<< HEAD
 import { AIAssistant } from "@/../ai";
 import { findWidgetById } from "@/utils/componentTree";
+=======
+import PerformanceTab from "./performance";
+>>>>>>> 8614137 (initial commit)
 
 const connectOptions = {
   mobile: {
@@ -202,9 +206,9 @@ function PulsePage({ section, refresh, channelId }: { section: string, refresh: 
           <Tab key="timeline" title="Timeline">
             <TimeLine timelineLogs={timelineLogs} clearTimelineLogs={clearTimelineLogs}></TimeLine>
           </Tab>
-          {/* <Tab key="performance" title="Performance">
-            Performance is under construction.
-          </Tab> */}
+          <Tab key="performance" title="Performance">
+            <PerformanceTab agent={uiAgent}></PerformanceTab>
+          </Tab>
           <Tab key="storage" title="Storage">
             <Storage data={storage} refreshStorage={refreshStorage}></Storage>
           </Tab>

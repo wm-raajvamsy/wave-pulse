@@ -27,9 +27,16 @@
 		"adm-zip": "^0.5.16",
 		"axios": "^1.7.5",
 		"clsx": "2.1.1",
+		"d3": "^7.8.5",
+		"d3-hierarchy": "^3.1.2",
 		"d3-scale": "^4.0.2",
 		"date-fns": "^4.1.0",
+<<<<<<< HEAD
 		"framer-motion": "^11.5.6",
+=======
+		"recharts": "^2.10.0",
+		"framer-motion": "~11.1.1",
+>>>>>>> 8614137 (initial commit)
 		"fs-extra": "^11.2.0",
 		"intl-messageformat": "^10.5.0",
 		"moment": "^2.30.1",
@@ -51,6 +58,7 @@
 	},
 	"devDependencies": {
 		"@types/adm-zip": "^0.5.5",
+		"@types/d3": "^7.4.3",
 		"@types/date-fns": "^2.5.3",
 		"@types/file-saver": "^2.0.7",
 		"@types/node": "20.5.7",

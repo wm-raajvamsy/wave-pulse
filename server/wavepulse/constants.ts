@@ -15,6 +15,9 @@ export const EVENTS = {
     },
     TIMELINE: {
         EVENT: 'timeline-event'
+    },
+    PERFORMANCE: {
+        DATA: 'performance-data'
     }
 };
 
@@ -61,5 +64,10 @@ export const CALLS = {
     },
     LOCALE: {
         GET: 'GET_LOCALE'
+    },
+    PERFORMANCE: {
+        START_RECORDING: 'START_PERFORMANCE_RECORDING',
+        STOP_RECORDING: 'STOP_PERFORMANCE_RECORDING',
+        GET_STATUS: 'GET_PERFORMANCE_STATUS'
     }
 };

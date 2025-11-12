@@ -1,6 +1,7 @@
 const { createServer } = require("node:http");
 const next = require("next");
 const { Server } = require("socket.io");
+const { performanceManager } = require("./wavepulse/performance-manager");
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
@@ -42,6 +43,18 @@ app.prepare().then(() => {
       socket.join(data.channelId);
     });
     socket.on('message', (message) => {
+        // Handle performance data
+        if (message.name === 'performance-data') {
+          try {
+            const { sessionId, events } = message.data[0];
+            if (sessionId && events) {
+              performanceManager.addEvents(sessionId, events);
+            }
+          } catch (error) {
+            console.error('[Socket.io] Error processing performance data:', error);
+          }
+        }
+        
         io.to(message.channelId).emit('message', message);
     });
   });
