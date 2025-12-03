@@ -1,0 +1,315 @@
+{
+  "info": {
+    "_postman_id": "wavepulse-api-collection",
+    "name": "WavePulse API",
+    "description": "REST API endpoints for WavePulse debugging tool.\n\n## Usage\n1. First, get the Element Tree to find widget IDs\n2. Use the `id` field from the element tree (not `name`) for widget property/style lookups\n\n## Example Widget ID\nFrom element tree response:\n```json\n{\n  \"name\": \"mainpage\",\n  \"tagName\": \"WmPage\",\n  \"id\": \"wm-app-content-mainpage\",\n  \"children\": [...]\n}\n```\nUse `wm-app-content-mainpage` as the widgetId parameter.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/wavepulse",
+      "type": "string"
+    },
+    {
+      "key": "channelId",
+      "value": "c1764792232069",
+      "type": "string"
+    },
+    {
+      "key": "widgetId",
+      "value": "mainpage",
+      "type": "string",
+      "description": "Use the 'id' field from element tree response"
+    }
+  ],
+  "item": [
+    {
+      "name": "Element Tree",
+      "item": [
+        {
+          "name": "Get Element Tree",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/element-tree?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "element-tree"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Returns the widget/element tree from the connected mobile app.\n\n**Response contains:**\n- `id` - Use this for widget property/style lookups\n- `name` - Display name of the widget\n- `tagName` - Widget type (WmPage, WmButton, etc.)\n- `children` - Nested child widgets"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Network Logs",
+      "item": [
+        {
+          "name": "Get Network Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/network-logs?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "network-logs"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Returns accumulated network request logs (HTTP requests made by the app)"
+          },
+          "response": []
+        },
+        {
+          "name": "Clear Network Logs",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/network-logs?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "network-logs"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Clears all network logs for the specified channel"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Console Logs",
+      "item": [
+        {
+          "name": "Get Console Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/console-logs?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "console-logs"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Returns accumulated console logs (debug, info, warn, error)"
+          },
+          "response": []
+        },
+        {
+          "name": "Clear Console Logs",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/console-logs?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "console-logs"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Clears all console logs for the specified channel"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Timeline",
+      "item": [
+        {
+          "name": "Get Timeline",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/timeline?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "timeline"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Returns accumulated timeline events (APP_STARTUP, VARIABLE_INVOKE, PAGE_READY, NETWORK_REQUEST)"
+          },
+          "response": []
+        },
+        {
+          "name": "Clear Timeline",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/timeline?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "timeline"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Clears all timeline logs for the specified channel"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Storage",
+      "item": [
+        {
+          "name": "Get Storage",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/storage?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "storage"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Returns all storage entries (AsyncStorage/localStorage) from the connected mobile app"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Info",
+      "item": [
+        {
+          "name": "Get Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/info?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "info"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Returns app info and platform info from the connected mobile app.\n\n**Response contains:**\n- `app`: name, version, applicationId, theme, locale, etc.\n- `platform`: os, version, device"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Widget",
+      "item": [
+        {
+          "name": "Get Widget (Properties + Styles)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/widget/{{widgetId}}?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "widget", "{{widgetId}}"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Returns both properties and styles for a specific widget.\n\n**Important:** Use the `id` field from the element tree response, not the `name` field.\n\n**Response contains:**\n- `properties`: Widget properties (caption, show, etc.)\n- `styles`: Widget styles organized by part (root, label, etc.)"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Widget Properties Only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/widget/properties/{{widgetId}}?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "widget", "properties", "{{widgetId}}"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Returns only properties for a specific widget.\n\n**Important:** Use the `id` field from the element tree response."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Widget Styles Only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/widget/styles/{{widgetId}}?channelId={{channelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "widget", "styles", "{{widgetId}}"],
+              "query": [
+                {
+                  "key": "channelId",
+                  "value": "{{channelId}}",
+                  "description": "The channel ID of the connected mobile app"
+                }
+              ]
+            },
+            "description": "Returns only styles for a specific widget.\n\n**Important:** Use the `id` field from the element tree response."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
